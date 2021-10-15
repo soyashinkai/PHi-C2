@@ -12,6 +12,7 @@ setup(
     description="Polymer dynamics deciphered from Hi-C data",
     long_description=long_description,
     long_description_content_type="text/markdown",
+    url="https://github.com/soyashinkai/PHi-C2",
     keywords=["biophysics", "Hi-C", "genomics", "bioinformatics", ],
     packages=find_packages(),
     classifiers=[
