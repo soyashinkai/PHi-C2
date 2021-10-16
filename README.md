@@ -1,174 +1,251 @@
 # PHi-C2
-PHi-C2 allows for the physical interpretation of Hi-C data
+PHi-C2 allows for a physical interpretation of a Hi-C contact matrix.
+The `phic` package includes a suite of command line tools.
 
-PHi-C consists of **Python3** codes for deciphering Hi-C data into polymer dynamics simulations.
-The input is a contact matrix data generated from a _hic_ file through [Juicer](https://github.com/aidenlab/juicer).
-PHi-C assumes that a genomic region of interest at an appropriate resolution can be modeled using a polymer network model including attractive and repulsive interactions between monomers.
-Instead of finding optimized 3D conformations, PHi-C's optimization procedure provides optimal interaction parameters of the polymer network model.
-We can then reconstruct an optimized contact matrix.
-Finally, we can carry out polymer dynamics simulations of the polymer network model equipped with the optimal interaction parameters.
+### Installation
 
-<!-- ![overview](/images/overview.png) -->
+Install `phic` from GitHub using pip:
 
-### Citation
+    pip install git+https://github.com/soyashinkai/PHi-C2
 
-If you use PHi-C, please cite:
 
-Soya Shinkai, Masaki Nakagawa, Takeshi Sugawara, Yuichi Togashi, Hiroshi Ochiai,
-Ryuichiro Nakato, Yuichi Taniguchi, and Shuichi Onami. (2020).
-**PHi-C: deciphering Hi-C data into polymer dynamics.**
-[_NAR Genomics and Bioinformatics_ **2** (2) lqaa020](https://doi.org/10.1093/nargab/lqaa020).
-
-## Requirements
-
-PHi-C codes require the following Python libraries:
-
--   os
--   sys
--   numpy
--   matplotlib
--   scipy
--   numba
+### Requirements
+- PHi-C2 is based on `python3`.
+- Python packages `numpy`, `matplotlib`, `scipy`, `numba`, `click`.
 
 To visualize the simulated polymer dynamics and conformations, [VMD](https://www.ks.uiuc.edu/Research/vmd/) is needed.
 
-## Quick Start
 
-Move to the directory [_Tutorial_](/Tutorial):
+### Citation
 
-    cd Tutorial
+We will submit a manuscript on PHi-C2, in which we dramatically updated the algorithm of the optimization procedure.
+But, the basic framework remains the same in the following papers:
+
+- Soya Shinkai, Masaki Nakagawa, Takeshi Sugawara, Yuichi Togashi, Hiroshi Ochiai, Ryuichiro Nakato, Yuichi Taniguchi, and Shuichi Onami. (2020). **PHi-C: deciphering Hi-C data into polymer dynamics.** [_NAR Genomics and Bioinformatics_ **2** (2) lqaa020](https://doi.org/10.1093/nargab/lqaa020).
+
+- Soya Shinkai, Takeshi Sugawara, Hisashi Miura, Ichiro Hiratani, and Shuichi Onami. (2020). **Microrheology for Hi-C Data Reveals the Spectrum of the Dynamic 3D Genome Organization.** [_Biophysical Journal_ **118** 2220–2228](https://doi.org/10.1016/j.bpj.2020.02.020).
+
+### Quick Start
+
+After the installation of `phic` and downloading of the directory [_demo_](/demo), move to the directory [_demo_](/demo):
+
+    demo/
+      Bonev_ES_observed_KR_chr8_42100-44500kb_res25kb.txt
+      run.sh
 
 Then, run the following scripts:
 
-    ./demo_run_1-2.sh
-    ./demo_run_3-4.sh
-    ./demo_run_5-6.sh
+    ./run.sh
 
-It will take a few seconds, 20 minutes or less, and a few minutes, respectively.
+It will take a few minutes.
 
-We used Hi-C data for mouse embryo stem cells (chr8: 42,100-44,525 kb; bin size: 25 kb) with KR normalization by [Bonev et al.](https://doi.org/10.1016/j.cell.2017.09.043).
-
-### Visualization of polymer conformations
-
-To visualize the simulated polymer dynamics, run VMD, firstly read _polymer_N97.psf_, and then read _dynamics_00_K.xyz_ on VMD.
-
-To visualize the sampled polymer conformations, run VMD, firstly read _polymer_N97.psf_, and then read _conformations_00_K.xyz_ on VMD.
+Here, `Bonev_ES_observed_KR_chr8_42100-44500kb_res25kb.txt` is an input file dumped by [Juicertools](https://github.com/aidenlab/juicer/wiki/Data-Extraction) with KR normalization for Hi-C data of mouse embryo stem cells (chr8: 42,100-44,525 kb, 25-kb resolution) by [Bonev et al.](https://doi.org/10.1016/j.cell.2017.09.043).
 
 * * *
 
-## Usage
+### Usage
 
-PHi-C consists of the following six Python codes:
+`phic` needs a subcommand on the command line interface:
 
--   1_conversion.py
--   2_normalization.py
--   3_optimization.py
--   4_validation.py
--   5_4d_simulation.py
--   6_conformations.py
+    phic SUBCOMMAND [OPTIONS]
 
-### 1. Conversion of a sparce matrix format into a dense contact matrix
+    Subcommands:
+    preprocessing
+      |
+    optimization
+      |-->  plot-optimization
+      |-->  dynamics
+      |-->  sampling
+      |-->  rheology
+              |--> plot-compliance
+              |--> plot-modulus
+              |--> plot-tangent
 
-Here, _NAME.txt_ as an example ipunt is in sparse matrix format produced from [“dump” command of Juicebox](https://github.com/aidenlab/juicer/wiki/Data-Extraction).
 
-    python3 1_conversion.py NAME.txt RES
+#### 1. preprocessing
 
-The command converts to dense matrix format data, _contact_matrix.txt_, at the newly made directory _NAME_:  
-_./NAME/contact_matrix.txt_.
+    phic preprocessing [OPTIONS]
 
-The other three arguments of the command represent the followings:
+    Options:
+      --input     TEXT      Input file dumped by Juicertools for a hic file  [required]
+      --res       INTEGER   Resolution of the bin size  [required]
+      --plt-max-c FLOAT     Maximum value of contact map  [required]
+      --help                Show this message and exit.
 
-<!-- -   START: the start genomic coordinate of the input Hi-C data,
--   END: the end genomic coordinate of the input Hi-C data, -->
--   RES: the bin size or resolution of the input Hi-C data.
+Here, _NAME.txt_ as an ipunt is in sparse matrix format produced from [“dump” command of Juicebox](https://github.com/aidenlab/juicer/wiki/Data-Extraction):
 
-### 2. Normalization of the dense contact matrix
+    42100000	42100000	12899.836
+    42100000	42125000	2076.9636
+    42125000	42125000	11072.94
+    42100000	42150000	1264.3281
+    .............................
+    .............................
+    44475000	44500000	3374.337
+    44500000	44500000	10828.436
 
-    python3 2_normalization.py NAME RES OFFSET PLT_MAX_LOG_C PLT_MIN_LOG_C
 
-The command normalizes the Hi-C matrix data, _./NAME/contact_matrix.txt_, so that the diagonal elements satisfy _C<sub>ii</sub>_ = 1 as probability, with an interpolation if needed.  
-The output six files are the followings:  
-_./NAME/normalized_contact_matrix.txt_  
-_./NAME/normalized_contact_probability.txt_  
-_./NAME/normalized_Cij.svg_  
-_./NAME/normalized_Cij_log.svg_  
-_./NAME/contact_probability.svg_  
-_./NAME/interpolation.log_
+The outputs are the followings:
 
-The other two arguments of the command represent the followings:
+    NAME/
+      C.txt
+      C_normalized.svg
+      C_normalized.txt
+      P_normalized.svg
+      P_normalized.txt
 
--   RES: the bin size or resolution of the input Hi-C data,
--   OFFSET: the offset value for ND contact probability _P(s)_ if needed,
--   PLT_MAX_LOG_C: the upper limit to plot _./NAME/normalized_Cij_log.svg_.
--   PLT_MIN_LOG_C: the lower limit to plot _./NAME/normalized_Cij_log.svg_.
+![C_normalized](/img/C_normalized.png)
 
-### 3. Optimization
+#### 2. optimization
 
-    python3 3_optimization.py NAME SAMPLE ALPHA1 ALPHA2 STEP1 STEP2 ITERATION INIT_K_BACKBONE THREADS
+    phic optimization [OPTIONS]
 
-The command carries out the PHi-C optimization.  
-The log data of the optimization are stored as _./NAME/optimized_data/optimization.log_.  
-The optimized interaction matrix data of the polymer network model with _SAMPLE-INDEX_ are output as
-_./NAME/optimized_data/{SAMPLE-INDEX}\_K.txt_.
+    Options:
+      --name                      TEXT    Target directory name  [required]
+      --init-k-backbone           FLOAT   Initial parameter of K_i,i+1  [default=0.5]
+      --larning-rate              FLOAT   Larning rate  [default=1e-4]
+      --stop-condition-parameter  FLOAT   Parameter for the stop condition  [default=1e-4]
+      --help                              Show this message and exit.
 
-The other seven arguments of the command represent the followings:
+The outputs are the followings:
 
--   SAMPLE: the number of samples to obtain optimized output,
--   ALPHA1: the learning rate of the optimization for _k<sub>i, i+1</sub>_,
--   ALPHA2: the learning rate of the optimization for _k<sub>i, j</sub>_,
--   STEP1: the number of the optimization steps for _k<sub>i, i+1</sub>_,
--   STEP2: the number of the optimization steps for _k<sub>i, j</sub>_,
--   ITERATION: the number to iterate (STEP1 + STEP2) optimization steps,
--   INIT_K_BACKBONE: initial values of _k<sub>i, i+1</sub>_,
--   THREADS: the number of threads.
+    NAME/data_optimization/
+      K_optimized.txt
+      optimization.log
 
-### 4. Validation of the optimized contact matrix data
 
-    python3 4_validation.py NAME RES SAMPLE PLT_MAX_LOG_C PLT_MIN_LOG_C PLT_MAX_K_BACKBONE PLT_MAX_K PLT_K_DIS_BINS PLT_MAX_K_DIS
+#### 3-1. plot-optimization
 
-The output eight files are the followings:  
-_./NAME/cost_correlation.txt_  
-_./NAME/optimized_data/{SAMPLE-INDEX}\_C.svg_  
-_./NAME/optimized_data/{SAMPLE-INDEX}\_C_log.svg_  
-_./NAME/optimized_data/{SAMPLE-INDEX}\_contact_probabilities.svg_  
-_./NAME/optimized_data/{SAMPLE-INDEX}\_Correlation.svg_  
-_./NAME/optimized_data/{SAMPLE-INDEX}\_K.svg_  
-_./NAME/optimized_data/{SAMPLE-INDEX}\_K_distribution.svg_  
-_./NAME/optimized_data/{SAMPLE-INDEX}\_k_polymer_backbone.svg_
+    phic plot-optimization [OPTIONS]
 
-The other five arguments of the command represent the followings:
+    Options:
+      --name                TEXT      Target directory name  [required]
+      --res                 INTEGER   Resolution of the bin size  [required]
+      --plt-max-c           FLOAT     Maximum value of contact map  [required]
+      --plt-max-k-backbone  FLOAT     Maximum value of K_i,i+1 profile  [required]
+      --plt-max-k           FLOAT     Maximum and minimum values of optimized K map  [required]
+      --plt-k-dis-bins      INTEGER   The number of bins of distribution of optimized K values  [required]
+      --plt-max-k-dis       FLOAT     Maximum value of the K distributioin  [required]
+      --help                          Show this message and exit.
 
--   PLT_MAX_LOG_C: the upper limit to plot _{SAMPLE-INDEX}\_C_log.svg_, _{SAMPLE-INDEX}\_contact_probabilities.svg_ and _{SAMPLE-INDEX}\_Correlation.svg_
--   PLT_MIN_LOG_C: the lower limit to plot _{SAMPLE-INDEX}\_C_log.svg_, _{SAMPLE-INDEX}\_contact_probabilities.svg_ and _{SAMPLE-INDEX}\_Correlation.svg_
--   PLT_MAX_K_BACKBONE: the upper limit to plot _{SAMPLE-INDEX}\_k_polymer_backbone.svg_,
--   PLT_MAX_K: the upper and lower limit to plot _{SAMPLE-INDEX}\_K.svg\_,
--   PLT_K_DIS_BINS: the number of the bins of _{SAMPLE-INDEX}\_K_distribution.svg_,
--   PLT_MAX_K_DIS: the upper limit to plot _{SAMPLE-INDEX}\_K_distribution.svg_.
+The outputs are the followings:
 
-### 5. 4D simulation of the optimal polymer dynamics
+    NAME/data_optimization/
+      C.svg
+      Correlation.png
+      Cost.svg
+      K.svg
+      K_backbone.svg
+      K_backbone.txt
+      K_distribution.svg
+      P.svg
 
-    python3 5_4d_simulation.py KFILE FRAME
+#### 3-2. dynamics
 
-The output two files are the followings:  
-_./polymer_N{NUMBER-OF-BEADS}.psf_  
-_./dynamics\_{INPUT-KFILE}.xyz_
+    phic dynamics [OPTIONS]
 
-The other two arguments of the command represent the followings:
+    Options:
+      --name      TEXT      Target directory name  [required]
+      --eps       FLOAT     Stepsize in the Langevin dynamics  [default=1e-3]
+      --interval  INTEGER   The number of steps between output frames  [required]
+      --frame     INTEGER   The number of output frames  [required]
+      --sample    INTEGER   The number of output dynamics  [default=1]
+      --seed      INTEGER   Seed of the random numbers  [default=12345678]
+      --help                Show this message and exit.
 
--   KFILE: the optimized interaction matrix data of the polymer network as input,
--   FRAME: the number of frames to visualize simulated polymer dynamics.
+The outputs are the followings:
 
-### 6. Sampling the optimal polymer conformations
+    NAME/data_dynamics/
+      polymer_N{NUMBER-OF-BEADS}.psf
+      sample{SAMPLE-NUMBER}.xyz
 
-    python3 6_conformation.py KFILE SAMPLE
+#### 3-3. sampling
 
-The output two files are the followings:  
-_./polymer_N{NUMBER-OF-BEADS}.psf_  
-_./conformations\_{INPUT-KFILE}.xyz_
+    phic sampling [OPTIONS]
 
-The other argument of the command represents the followings:
+    Options:
+      --name    TEXT      Target directory name  [required]
+      --sample  INTEGER   The number of output conformations  [required]
+      --seed    INTEGER   Seed of the random numbers  [default=12345678]
+      --help              Show this message and exit.
 
--   KFILE: the optimized interaction matrix data of the polymer network as input,
--   SAMPLE: the number of polymer conformations to caluclate.
+The outputs are the followings:
 
-* * *
+    NAME/data_sampling/
+      polymer_N{NUMBER-OF-BEADS}.psf
+      conformations.xyz
+
+#### 3-4-1. rheology
+
+    phic rheology [OPTIONS]
+
+    Options:
+      --name    TEXT      Target directory name  [required]
+      --upper   INTEGER   Upper value of the exponent of the angular frequency  [default=1]
+      --lower   INTEGER   Lower value of the exponent of the angular frequency  [default=-5]
+      --help              Show this message and exit.
+
+The outputs are the followings:
+
+    NAME/data_rheology/
+      n{BEAD-NUMBER}.txt
+
+#### 3-4-2. plot-compliance
+
+    phic plot-compliance [OPTIONS]
+
+    Options:
+      --name          TEXT      Target directory name  [required]
+      --upper         INTEGER   Upper value of the exponent of the angular frequency  [default=1]
+      --lower         INTEGER   Lower value of the exponent of the angular frequency  [default=-5]
+      --plt-upper     INTEGER   Upper value of the exponent of the angular frequency in the spectrum  [required]
+      --plt-lower     INTEGER   Lower value of the exponent of the angular frequency in the spectrum  [required]
+      --plt-max-log   FLOAT     Maximum value of log10 |J*|  [required]
+      --plt-min-log   FLOAT     Minimum value of log10 |J*|  [required]
+      --aspect        FLOAT     Aspect ratio of the spectrum  [default=0.8]
+      --help                    Show this message and exit.
+
+The outputs are the followings:
+
+    NAME/data_rheology/figs/
+      J_abs_spectrum.svg
+      J_curves.png
+
+#### 3-4-2. plot-modulus
+
+    phic plot-modulus [OPTIONS]
+
+    Options:
+      --name          TEXT      Target directory name  [required]
+      --upper         INTEGER   Upper value of the exponent of the angular frequency  [default=1]
+      --lower         INTEGER   Lower value of the exponent of the angular frequency  [default=-5]
+      --plt-upper     INTEGER   Upper value of the exponent of the angular frequency in the spectrum  [required]
+      --plt-lower     INTEGER   Lower value of the exponent of the angular frequency in the spectrum  [required]
+      --plt-max-log   FLOAT     Maximum value of log10 |G*|  [required]
+      --plt-min-log   FLOAT     Minimum value of log10 |G*|  [required]
+      --aspect        FLOAT     Aspect ratio of the spectrum  [default=0.8]
+      --help                    Show this message and exit.
+
+The outputs are the followings:
+
+    NAME/data_rheology/figs/
+      G_abs_spectrum.svg
+      G_curves.png
+
+#### 3-4-3. plot-tangent
+
+    phic plot-tangent [OPTIONS]
+
+    Options:
+      --name          TEXT      Target directory name  [required]
+      --upper         INTEGER   Upper value of the exponent of the angular frequency  [default=1]
+      --lower         INTEGER   Lower value of the exponent of the angular frequency  [default=-5]
+      --plt-upper     INTEGER   Upper value of the exponent of the angular frequency in the spectrum  [required]
+      --plt-lower     INTEGER   Lower value of the exponent of the angular frequency in the spectrum  [required]
+      --plt-max-log   FLOAT     Maximum value of log10 tanδ  [required]
+      --aspect        FLOAT     Aspect ratio of the spectrum  [default=0.8]
+      --help                    Show this message and exit.
+
+The output is the following:
+
+    NAME/data_rheology/figs/
+      tan_spectrum.svg
