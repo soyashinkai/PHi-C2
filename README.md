@@ -93,7 +93,7 @@ The outputs are the followings:
       P_normalized.svg
       P_normalized.txt
 
-![C_normalized](/img/C_normalized.png)
+![C_normalized](/img/C_normalized.svg)
 
 #### 2. optimization
 
