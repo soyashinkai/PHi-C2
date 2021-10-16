@@ -93,6 +93,7 @@ The outputs are the followings:
       P_normalized.svg
       P_normalized.txt
 
+<img src="/img/C_normalized.svg" width="100">
 ![C_normalized](/img/C_normalized.svg)
 
 #### 2. optimization
