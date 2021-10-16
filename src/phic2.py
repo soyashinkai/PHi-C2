@@ -266,11 +266,11 @@ def preprocessing(FILE_DUMPED, RES, PLT_MAX_C):
 @click.option("--name", "NAME", required=True,
               help="Target directory name")
 @click.option("--init-k-backbone", "INIT_K_BACKBONE", type=float, default=0.5,
-              help="Initial parameter of K_i,i+1 [default=0.5]")
+              help="Initial parameter of K_i,i+1  [default=0.5]")
 @click.option("--larning-rate", "ETA", type=float, default=1e-4,
-              help="Larning rate [default=1e-4]")
+              help="Larning rate  [default=1e-4]")
 @click.option("--stop-condition-parameter", "ALPHA", type=float, default=1e-4,
-              help="Parameter for the stop condition [default=1e-4]")
+              help="Parameter for the stop condition  [default=1e-4]")
 def optimization(NAME, INIT_K_BACKBONE, ETA, ALPHA):
     STOP_DELTA = ETA * ALPHA
     # ----------------------------------------------------------------------------------------------
@@ -464,15 +464,15 @@ def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K_BACKBONE, PLT_MAX_K, PLT_K
 @click.option("--name", "NAME", required=True,
               help="Target directory name")
 @click.option("--eps", "EPS", type=float, default=1e-3,
-              help="Stepsize in the Langevin dynamics [default=1e-3]")
+              help="Stepsize in the Langevin dynamics  [default=1e-3]")
 @click.option("--interval", "INTERVAL", type=int, required=True,
               help="The number of steps between output frames")
 @click.option("--frame", "FRAME", type=int, required=True,
               help="The number of output frames")
 @click.option("--sample", "SAMPLE", type=int, default=1,
-              help="The number of output dynamics [default=1]")
+              help="The number of output dynamics  [default=1]")
 @click.option("--seed", "SEED", type=int, default=12345678,
-              help="Seed of the random numbers [default=12345678]")
+              help="Seed of the random numbers  [default=12345678]")
 def dynamics(NAME, EPS, INTERVAL, FRAME, SAMPLE, SEED):
     NOISE = np.sqrt(2 * EPS)
     F_Coefficient = 3 * EPS
@@ -511,7 +511,7 @@ def dynamics(NAME, EPS, INTERVAL, FRAME, SAMPLE, SEED):
 @click.option("--sample", "SAMPLE", type=int, required=True,
               help="The number of output conformations")
 @click.option("--seed", "SEED", type=int, default=12345678,
-              help="Seed of the random numbers [default=12345678]")
+              help="Seed of the random numbers  [default=12345678]")
 def sampling(NAME, SAMPLE, SEED):
     np.random.seed(SEED)
     # ----------------------------------------------------------------------------------------------
@@ -543,9 +543,9 @@ def sampling(NAME, SAMPLE, SEED):
 @click.option("--name", "NAME", required=True,
               help="Target directory name")
 @click.option("--upper", "UPPER", type=int, default=1,
-              help="Upper value of the exponent of the angular frequency [default=1]")
+              help="Upper value of the exponent of the angular frequency  [default=1]")
 @click.option("--lower", "LOWER", type=int, default=-5,
-              help="Lower value of the exponent of the angular frequency [default=-5]")
+              help="Lower value of the exponent of the angular frequency  [default=-5]")
 def rheology(NAME, UPPER, LOWER):
     M = 100 * (UPPER - LOWER)
     # ----------------------------------------------------------------------------------------------
@@ -586,9 +586,9 @@ def rheology(NAME, UPPER, LOWER):
 @click.option("--name", "NAME", required=True,
               help="Target directory name")
 @click.option("--upper", "UPPER", type=int, default=1,
-              help="Upper value of the exponent of the angular frequency [default=1]")
+              help="Upper value of the exponent of the angular frequency  [default=1]")
 @click.option("--lower", "LOWER", type=int, default=-5,
-              help="Lower value of the exponent of the angular frequency [default=-5]")
+              help="Lower value of the exponent of the angular frequency  [default=-5]")
 @click.option("--plt-upper", "PLT_UPPER", type=int, required=True,
               help="Upper value of the exponent of the angular frequency in the spectrum")
 @click.option("--plt-lower", "PLT_LOWER", type=int, required=True,
@@ -598,7 +598,7 @@ def rheology(NAME, UPPER, LOWER):
 @click.option("--plt-min-log", "PLT_MIN_LOG", type=float, required=True,
               help="Minimum value of log10 |J*|")
 @click.option("--aspect", "ASPECT", type=float, default=0.8,
-              help="Aspect ratio of the spectrum [default=0.8]")
+              help="Aspect ratio of the spectrum  [default=0.8]")
 def plot_compliance(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_LOG, ASPECT):
     DIR_OPT = NAME + "/data_optimization"
     FILE_READ_K = DIR_OPT + "/K_optimized.txt"
@@ -675,9 +675,9 @@ def plot_compliance(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_M
 @click.option("--name", "NAME", required=True,
               help="Target directory name")
 @click.option("--upper", "UPPER", type=int, default=1,
-              help="Upper value of the exponent of the angular frequency [default=1]")
+              help="Upper value of the exponent of the angular frequency  [default=1]")
 @click.option("--lower", "LOWER", type=int, default=-5,
-              help="Lower value of the exponent of the angular frequency [default=-5]")
+              help="Lower value of the exponent of the angular frequency  [default=-5]")
 @click.option("--plt-upper", "PLT_UPPER", type=int, required=True,
               help="Upper value of the exponent of the angular frequency in the spectrum")
 @click.option("--plt-lower", "PLT_LOWER", type=int, required=True,
@@ -687,7 +687,7 @@ def plot_compliance(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_M
 @click.option("--plt-min-log", "PLT_MIN_LOG", type=float, required=True,
               help="Minimum value of log10 |G*|")
 @click.option("--aspect", "ASPECT", type=float, default=0.8,
-              help="Aspect ratio of the spectrum [default=0.8]")
+              help="Aspect ratio of the spectrum  [default=0.8]")
 def plot_modulus(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_LOG, ASPECT):
     DIR_OPT = NAME + "/data_optimization"
     FILE_READ_K = DIR_OPT + "/K_optimized.txt"
@@ -764,9 +764,9 @@ def plot_modulus(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_
 @click.option("--name", "NAME", required=True,
               help="Target directory name")
 @click.option("--upper", "UPPER", type=int, default=1,
-              help="Upper value of the exponent of the angular frequency [default=1]")
+              help="Upper value of the exponent of the angular frequency  [default=1]")
 @click.option("--lower", "LOWER", type=int, default=-5,
-              help="Lower value of the exponent of the angular frequency [default=-5]")
+              help="Lower value of the exponent of the angular frequency  [default=-5]")
 @click.option("--plt-upper", "PLT_UPPER", type=int, required=True,
               help="Upper value of the exponent of the angular frequency in the spectrum")
 @click.option("--plt-lower", "PLT_LOWER", type=int, required=True,
@@ -774,7 +774,7 @@ def plot_modulus(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_
 @click.option("--plt-max-log", "PLT_MAX_LOG", type=float, required=True,
               help="Maximum value of log10 tanδ")
 @click.option("--aspect", "ASPECT", type=float, default=0.8,
-              help="Aspect ratio of the spectrum [default=0.8]")
+              help="Aspect ratio of the spectrum  [default=0.8]")
 def plot_tangent(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, ASPECT):
     DIR_OPT = NAME + "/data_optimization"
     FILE_READ_K = DIR_OPT + "/K_optimized.txt"
