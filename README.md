@@ -61,17 +61,6 @@ Here, `Bonev_ES_observed_KR_chr8_42100-44500kb_res25kb.txt` is an input file dum
               |--> plot-modulus
               |--> plot-tangent
 
-
-#### 1. preprocessing
-
-    phic preprocessing [OPTIONS]
-
-    Options:
-      --input     TEXT      Input file dumped by Juicertools for a hic file  [required]
-      --res       INTEGER   Resolution of the bin size  [required]
-      --plt-max-c FLOAT     Maximum value of contact map  [required]
-      --help                Show this message and exit.
-
 Here, _NAME.txt_ as an ipunt is in sparse matrix format produced from [“dump” command of Juicebox](https://github.com/aidenlab/juicer/wiki/Data-Extraction):
 
     42100000	42100000	12899.836
@@ -83,6 +72,18 @@ Here, _NAME.txt_ as an ipunt is in sparse matrix format produced from [“dump�
     44475000	44500000	3374.337
     44500000	44500000	10828.436
 
+All output files of `phic` will be stored in the newly made directory _NAME_.
+
+#### 1. preprocessing
+
+    phic preprocessing [OPTIONS]
+
+    Options:
+      --input     TEXT      Input file dumped by Juicertools for a hic file  [required]
+      --res       INTEGER   Resolution of the bin size  [required]
+      --plt-max-c FLOAT     Maximum value of contact map  [required]
+      --help                Show this message and exit.
+
 
 The outputs are the followings:
 
@@ -93,8 +94,7 @@ The outputs are the followings:
       P_normalized.svg
       P_normalized.txt
 
-
-<img src="/img/C_normalized.svg" height="300">
+![fig1](/img/fig1.svg)
 
 #### 2. optimization
 
