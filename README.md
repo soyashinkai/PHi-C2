@@ -214,6 +214,9 @@ The outputs are the followings:
       J_abs_spectrum.svg
       J_curves.png
 
+<img src="/img/fig3.svg" height="250">
+
+
 #### 3-4-2. plot-modulus
 
     phic plot-modulus [OPTIONS]
@@ -235,6 +238,8 @@ The outputs are the followings:
       G_abs_spectrum.svg
       G_curves.png
 
+<img src="/img/fig4.svg" height="250">
+
 #### 3-4-3. plot-tangent
 
     phic plot-tangent [OPTIONS]
@@ -253,3 +258,5 @@ The output is the following:
 
     NAME/data_rheology/figs/
       tan_spectrum.svg
+
+<img src="/img/fig5.svg" height="250">
