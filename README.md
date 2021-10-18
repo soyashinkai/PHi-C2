@@ -94,7 +94,7 @@ The outputs are the followings:
       P_normalized.svg
       P_normalized.txt
 
-<img src="/img/fig1.svg" height="300">
+<img src="/img/fig1.svg" height="250">
 
 #### 2. optimization
 
@@ -140,7 +140,7 @@ The outputs are the followings:
       K_distribution.svg
       P.svg
 
-<img src="/img/fig2.svg" height="600">
+<img src="/img/fig2.svg" height="500">
 
 
 #### 3-2. dynamics
