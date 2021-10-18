@@ -271,7 +271,11 @@ def preprocessing(FILE_DUMPED, RES, PLT_MAX_C):
               help="Larning rate  [default=1e-4]")
 @click.option("--stop-condition-parameter", "ALPHA", type=float, default=1e-4,
               help="Parameter for the stop condition  [default=1e-4]")
-def optimization(NAME, INIT_K_BACKBONE, ETA, ALPHA):
+@click.option("--threads", "THREADS", type=int, default=1,
+              help="The number of threads  [default=1]")
+def optimization(NAME, INIT_K_BACKBONE, ETA, ALPHA, THREADS):
+    os.environ["MKL_NUM_THREADS"] = THREADS
+    os.environ["OMP_NUM_THREADS"] = THREADS
     STOP_DELTA = ETA * ALPHA
     # ----------------------------------------------------------------------------------------------
     FILE_READ = NAME + "/C_normalized.txt"
