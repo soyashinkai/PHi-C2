@@ -94,7 +94,7 @@ The outputs are the followings:
       P_normalized.svg
       P_normalized.txt
 
-![fig1](/img/fig1.svg)
+<img src="/img/fig1.svg" height="300">
 
 #### 2. optimization
 
