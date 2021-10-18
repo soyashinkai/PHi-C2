@@ -35,6 +35,7 @@ After the installation of `phic` and downloading of the directory [_demo_](/demo
 
 Then, run the following scripts:
 
+    chmod +x run.sh
     ./run.sh
 
 It will take a few minutes.
