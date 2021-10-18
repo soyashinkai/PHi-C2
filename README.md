@@ -140,6 +140,9 @@ The outputs are the followings:
       K_distribution.svg
       P.svg
 
+<img src="/img/fig2.svg" height="600">
+
+
 #### 3-2. dynamics
 
     phic dynamics [OPTIONS]
