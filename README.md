@@ -103,7 +103,7 @@ The outputs are the followings:
     Options:
       --name                      TEXT   Target directory name  [required]
       --init-k-backbone           FLOAT  Initial parameter of K_i,i+1  [default=0.5]
-      --larning-rate              FLOAT  Larning rate  [default=1e-4]
+      --learning-rate             FLOAT  Learning rate  [default=1e-4]
       --stop-condition-parameter  FLOAT  Parameter for the stop condition  [default=1e-4]
       --threads                   TEXT   The number of threads  [default=1]
       --help                             Show this message and exit.
