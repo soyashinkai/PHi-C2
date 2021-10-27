@@ -267,8 +267,8 @@ def preprocessing(FILE_DUMPED, RES, PLT_MAX_C):
               help="Target directory name")
 @click.option("--init-k-backbone", "INIT_K_BACKBONE", type=float, default=0.5,
               help="Initial parameter of K_i,i+1  [default=0.5]")
-@click.option("--larning-rate", "ETA", type=float, default=1e-4,
-              help="Larning rate  [default=1e-4]")
+@click.option("--learning-rate", "ETA", type=float, default=1e-4,
+              help="Learning rate  [default=1e-4]")
 @click.option("--stop-condition-parameter", "ALPHA", type=float, default=1e-4,
               help="Parameter for the stop condition  [default=1e-4]")
 @click.option("--threads", "THREADS", default="1",
