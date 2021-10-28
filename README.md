@@ -2,7 +2,7 @@
 PHi-C2 allows for a physical interpretation of a Hi-C contact matrix.
 The `phic` package includes a suite of command line tools.
 
-<img src="/img/fig0.svg>
+<img src="/img/fig0.svg">
 
 ### Installation
 
