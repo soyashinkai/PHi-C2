@@ -16,7 +16,7 @@
    version="1.1"
    id="svg8"
    inkscape:version="0.92.5 (2060ec1f9f, 2020-04-08)"
-   sodipodi:docname="figure1.svg"
+   sodipodi:docname="fig0.svg"
    inkscape:export-filename="/home/soya/Dropbox/Writing Papers/2021_PHi-C_2.0/Figures/figure1.png"
    inkscape:export-xdpi="200"
    inkscape:export-ydpi="200">
@@ -860,8 +860,8 @@
      inkscape:pageopacity="1"
      inkscape:pageshadow="2"
      inkscape:zoom="1.979899"
-     inkscape:cx="225.9537"
-     inkscape:cy="145.62423"
+     inkscape:cx="222.16563"
+     inkscape:cy="204.21308"
      inkscape:document-units="px"
      inkscape:current-layer="layer1"
      showgrid="false"
@@ -879,7 +879,7 @@
         <dc:format>image/svg+xml</dc:format>
         <dc:type
            rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title></dc:title>
+        <dc:title />
       </cc:Work>
     </rdf:RDF>
   </metadata>
@@ -998,22 +998,22 @@
     <text
        xml:space="preserve"
        style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:4.23333311px;line-height:1;font-family:Arial;-inkscape-font-specification:'Arial Bold';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:start;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:start;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332;stroke-linecap:butt;stroke-linejoin:round"
-       x="76.037605"
-       y="194.05855"
+       x="69.98436"
+       y="193.21736"
        id="text905"><tspan
          sodipodi:role="line"
          id="tspan903"
-         x="76.037605"
-         y="194.05855"
+         x="69.98436"
+         y="193.21736"
          style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;line-height:1;font-family:Arial;-inkscape-font-specification:'Arial Bold';text-align:start;text-anchor:start;stroke-width:0.26458332;stroke-linecap:butt;stroke-linejoin:round">iuput</tspan><tspan
          sodipodi:role="line"
-         x="76.037605"
-         y="198.29189"
+         x="69.98436"
+         y="197.4507"
          style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;line-height:1;font-family:Arial;-inkscape-font-specification:Arial;text-align:start;text-anchor:start;stroke-width:0.26458332;stroke-linecap:butt;stroke-linejoin:round"
          id="tspan934">sparse matrix fromat</tspan><tspan
          sodipodi:role="line"
-         x="76.037605"
-         y="202.52521"
+         x="69.98436"
+         y="201.68402"
          style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;line-height:1;font-family:Arial;-inkscape-font-specification:Arial;text-align:start;text-anchor:start;stroke-width:0.26458332;stroke-linecap:butt;stroke-linejoin:round"
          id="tspan959">extracted from .hic file</tspan></text>
     <g
