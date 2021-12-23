@@ -86,7 +86,6 @@ All output files of `phic` will be stored in the newly made directory _NAME_.
       --plt-max-c FLOAT     Maximum value of contact map  [required]
       --help                Show this message and exit.
 
-
 The outputs are the followings:
 
     NAME/
@@ -95,6 +94,11 @@ The outputs are the followings:
       C_normalized.txt
       P_normalized.svg
       P_normalized.txt
+
+
+Example:
+
+    phic preprocessing --input NAME.txt --res 25000 --plt-max-c 0.1
 
 <img src="/img/fig1.svg" height="250">
 
@@ -110,11 +114,16 @@ The outputs are the followings:
       --threads                   TEXT   The number of threads  [default=1]
       --help                             Show this message and exit.
 
+
 The outputs are the followings:
 
     NAME/data_optimization/
       K_optimized.txt
       optimization.log
+
+Example:
+
+    phic optimization --name NAME
 
 
 #### 3-1. plot-optimization
@@ -143,6 +152,10 @@ The outputs are the followings:
       K_distribution.svg
       P.svg
 
+Example:
+
+    phic plot-optimization --name NAME --res 25000 --plt-max-c 0.1 --plt-max-k-backbone 1.0 --plt-max-k 0.1 --plt-k-dis-bins 200 --plt-max-k-dis 100
+
 <img src="/img/fig2.svg" height="500">
 
 
@@ -165,6 +178,10 @@ The outputs are the followings:
       polymer_N{NUMBER-OF-BEADS}.psf
       sample{SAMPLE-NUMBER}.xyz
 
+Example:
+
+    phic dynamics --name NAME --interval 100 --frame 1000
+
 #### 3-3. sampling
 
     phic sampling [OPTIONS]
@@ -181,6 +198,10 @@ The outputs are the followings:
       polymer_N{NUMBER-OF-BEADS}.psf
       conformations.xyz
 
+Example:
+
+    phic sampling --name NAME --sample 1000
+
 #### 3-4-1. rheology
 
     phic rheology [OPTIONS]
@@ -195,6 +216,11 @@ The outputs are the followings:
 
     NAME/data_rheology/
       n{BEAD-NUMBER}.txt
+
+Example:
+
+    phic rheology --name NAME
+
 
 #### 3-4-2. plot-compliance
 
@@ -216,6 +242,10 @@ The outputs are the followings:
     NAME/data_rheology/figs/
       J_abs_spectrum.svg
       J_curves.png
+
+Example:
+
+    phic plot-compliance --name NAME --plt-upper 0 --plt-lower -3 --plt-max-log 1.3 --plt-min-log -0.3
 
 <img src="/img/fig3.svg" height="250">
 
@@ -241,6 +271,10 @@ The outputs are the followings:
       G_abs_spectrum.svg
       G_curves.png
 
+Example:
+
+    phic plot-modulus --name NAME --plt-upper 0 --plt-lower -3 --plt-max-log 0.4 --plt-min-log -1.2
+
 <img src="/img/fig4.svg" height="250">
 
 #### 3-4-3. plot-tangent
@@ -261,5 +295,9 @@ The output is the following:
 
     NAME/data_rheology/figs/
       tan_spectrum.svg
+
+Example:
+
+    phic plot-tangent --name NAME --plt-upper 0 --plt-lower -3 --plt-max-log 0.2
 
 <img src="/img/fig5.svg" height="250">
