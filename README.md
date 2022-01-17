@@ -6,9 +6,9 @@ The `phic` package includes a suite of command line tools.
 
 ### Installation
 
-Install `phic` from GitHub using pip:
+Install `phic` from PyPI using pip:
 
-    pip install git+https://github.com/soyashinkai/PHi-C2
+    pip install phic
 
 
 ### Requirements
