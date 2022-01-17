@@ -13,7 +13,8 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/soyashinkai/PHi-C2",
-    keywords=["biophysics", "Hi-C", "genomics", "bioinformatics", ],
+    keywords=["biophysics", "bioinformatics", "genomics", "Hi-C",
+              "polymer modeling", "polymer dynamics", "rheology", ],
     packages=find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
