@@ -10,6 +10,8 @@ Install `phic` from PyPI using pip:
 
     pip install phic
 
+Without preparing a Python environment, PHi-C2 rus on [Google Colab](https://bit.ly/3rlptGI).
+
 
 ### Requirements
 - PHi-C2 is based on `python3`.
