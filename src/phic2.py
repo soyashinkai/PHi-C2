@@ -607,6 +607,7 @@ def plot_compliance(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_M
     DIR_OPT = NAME + "/data_optimization"
     FILE_READ_K = DIR_OPT + "/K_optimized.txt"
     DIR = NAME + "/data_rheology"
+    FILE_OUT_SPECTRUM = DIR + "/data_J_abs_spectrum.txt"
     DIR_FIG = DIR + "/figs"
     os.makedirs(DIR_FIG, exist_ok=True)
     FILE_FIG_CURVES = DIR_FIG + "/J_curves.png"
@@ -672,6 +673,8 @@ def plot_compliance(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_M
 
     plt.savefig(FILE_FIG_SPECTRUM)
     plt.close()
+    # ----------------------------------------------------------------------------------------------
+    np.savetxt(FILE_OUT_SPECTRUM, J_abs[START:END, :], fmt="%e")
 # --------------------------------------------------------------------------------------------------
 
 
@@ -696,6 +699,7 @@ def plot_modulus(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_
     DIR_OPT = NAME + "/data_optimization"
     FILE_READ_K = DIR_OPT + "/K_optimized.txt"
     DIR = NAME + "/data_rheology"
+    FILE_OUT_SPECTRUM = DIR + "/data_G_abs_spectrum.txt"
     DIR_FIG = DIR + "/figs"
     os.makedirs(DIR_FIG, exist_ok=True)
     FILE_FIG_CURVES = DIR_FIG + "/G_curves.png"
@@ -761,6 +765,8 @@ def plot_modulus(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_
 
     plt.savefig(FILE_FIG_SPECTRUM)
     plt.close()
+    # ----------------------------------------------------------------------------------------------
+    np.savetxt(FILE_OUT_SPECTRUM, G_abs[START:END, :], fmt="%e")
 # --------------------------------------------------------------------------------------------------
 
 
@@ -783,6 +789,7 @@ def plot_tangent(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, ASPECT):
     DIR_OPT = NAME + "/data_optimization"
     FILE_READ_K = DIR_OPT + "/K_optimized.txt"
     DIR = NAME + "/data_rheology"
+    FILE_OUT_SPECTRUM = DIR + "/data_tan_spectrum.txt"
     DIR_FIG = DIR + "/figs"
     os.makedirs(DIR_FIG, exist_ok=True)
     FILE_FIG_SPECTRUM = DIR_FIG + "/tan_spectrum.svg"
@@ -825,6 +832,8 @@ def plot_tangent(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, ASPECT):
 
     plt.savefig(FILE_FIG_SPECTRUM)
     plt.close()
+    # ----------------------------------------------------------------------------------------------
+    np.savetxt(FILE_OUT_SPECTRUM, tan[START:END, :], fmt="%e")
 # --------------------------------------------------------------------------------------------------
 
 

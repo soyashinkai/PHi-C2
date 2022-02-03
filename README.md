@@ -241,6 +241,8 @@ Example:
 
 The outputs are the followings:
 
+    NAME/data_rheology/
+      data_J_abs_spectrum.txt
     NAME/data_rheology/figs/
       J_abs_spectrum.svg
       J_curves.png
@@ -269,6 +271,8 @@ Example:
 
 The outputs are the followings:
 
+    NAME/data_rheology/
+      data_G_abs_spectrum.txt
     NAME/data_rheology/figs/
       G_abs_spectrum.svg
       G_curves.png
@@ -295,6 +299,8 @@ Example:
 
 The output is the following:
 
+    NAME/data_rheology/
+      data_tan_spectrum.txt
     NAME/data_rheology/figs/
       tan_spectrum.svg
 
