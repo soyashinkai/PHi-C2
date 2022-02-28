@@ -607,11 +607,15 @@ def plot_compliance(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_M
     DIR_OPT = NAME + "/data_optimization"
     FILE_READ_K = DIR_OPT + "/K_optimized.txt"
     DIR = NAME + "/data_rheology"
-    FILE_OUT_SPECTRUM = DIR + "/data_J_abs_spectrum.txt"
+    FILE_OUT_SPECTRUM_STORAGE = DIR + "/data_J_storage_spectrum.txt"
+    FILE_OUT_SPECTRUM_LOSS = DIR + "/data_J_loss_spectrum.txt"
+    FILE_OUT_SPECTRUM_ABS = DIR + "/data_J_abs_spectrum.txt"
     DIR_FIG = DIR + "/figs"
     os.makedirs(DIR_FIG, exist_ok=True)
     FILE_FIG_CURVES = DIR_FIG + "/J_curves.png"
-    FILE_FIG_SPECTRUM = DIR_FIG + "/J_abs_spectrum.svg"
+    FILE_FIG_SPECTRUM_STORAGE = DIR_FIG + "/J_storage_spectrum.svg"
+    FILE_FIG_SPECTRUM_LOSS = DIR_FIG + "/J_loss_spectrum.svg"
+    FILE_FIG_SPECTRUM_ABS = DIR_FIG + "/J_abs_spectrum.svg"
     # ----------------------------------------------------------------------------------------------
     K, N = Read_K(FILE_READ_K)
     # ----------------------------------------------------------------------------------------------
@@ -646,11 +650,59 @@ def plot_compliance(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_M
     YTICKS_LABELS = []
     for n in range(PLT_LOWER, PLT_UPPER + 1):
         YTICKS_LABELS.append(n)
+    J_storage = np.zeros((M + 1, N))
+    J_loss = np.zeros((M + 1, N))
     J_abs = np.zeros((M + 1, N))
     for n in range(N):
         FILE_READ = DIR + "/n{0:d}.txt".format(n)
         data = np.loadtxt(FILE_READ)
+        J_storage[:, n] = data[:, 1]
+        J_loss[:, n] = data[:, 2]
         J_abs[:, n] = data[:, 3]
+    # ----------------------------------------------------------------------------------------------
+    plt.figure(figsize=(8, 4))
+    plt.ylabel(r"$\mathrm{\mathbf{log_{10} \bar{\omega}}}$")
+    plt.yticks(np.arange(0, END - START, 100), YTICKS_LABELS)
+
+    plt.imshow(np.log10(J_storage[START:END, :]),
+               cmap="jet",
+               clim=(PLT_MIN_LOG, PLT_MAX_LOG),
+               aspect=ASPECT,
+               origin="lower")
+    plt.colorbar(shrink=0.8,
+                 label=r"$\mathrm{\mathbf{log_{10} \bar{J}'(\bar{\omega})}}$",
+                 ticks=[0, 1])
+
+    ax = plt.gca()
+    ax.spines["right"].set_color("none")
+    ax.spines["top"].set_color("none")
+    ax.spines["bottom"].set_color("none")
+    plt.tick_params(labelbottom=0, bottom=0, labelleft=1)
+
+    plt.savefig(FILE_FIG_SPECTRUM_STORAGE)
+    plt.close()
+    # ----------------------------------------------------------------------------------------------
+    plt.figure(figsize=(8, 4))
+    plt.ylabel(r"$\mathrm{\mathbf{log_{10} \bar{\omega}}}$")
+    plt.yticks(np.arange(0, END - START, 100), YTICKS_LABELS)
+
+    plt.imshow(np.log10(J_loss[START:END, :]),
+               cmap="jet",
+               clim=(PLT_MIN_LOG, PLT_MAX_LOG),
+               aspect=ASPECT,
+               origin="lower")
+    plt.colorbar(shrink=0.8,
+                 label=r"$\mathrm{\mathbf{log_{10} \bar{J}''(\bar{\omega})}}$",
+                 ticks=[0, 1])
+
+    ax = plt.gca()
+    ax.spines["right"].set_color("none")
+    ax.spines["top"].set_color("none")
+    ax.spines["bottom"].set_color("none")
+    plt.tick_params(labelbottom=0, bottom=0, labelleft=1)
+
+    plt.savefig(FILE_FIG_SPECTRUM_LOSS)
+    plt.close()
     # ----------------------------------------------------------------------------------------------
     plt.figure(figsize=(8, 4))
     plt.ylabel(r"$\mathrm{\mathbf{log_{10} \bar{\omega}}}$")
@@ -671,10 +723,12 @@ def plot_compliance(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_M
     ax.spines["bottom"].set_color("none")
     plt.tick_params(labelbottom=0, bottom=0, labelleft=1)
 
-    plt.savefig(FILE_FIG_SPECTRUM)
+    plt.savefig(FILE_FIG_SPECTRUM_ABS)
     plt.close()
     # ----------------------------------------------------------------------------------------------
-    np.savetxt(FILE_OUT_SPECTRUM, J_abs[START:END, :], fmt="%e")
+    np.savetxt(FILE_OUT_SPECTRUM_STORAGE, J_storage[START:END, :], fmt="%e")
+    np.savetxt(FILE_OUT_SPECTRUM_LOSS, J_loss[START:END, :], fmt="%e")
+    np.savetxt(FILE_OUT_SPECTRUM_ABS, J_abs[START:END, :], fmt="%e")
 # --------------------------------------------------------------------------------------------------
 
 
@@ -699,11 +753,15 @@ def plot_modulus(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_
     DIR_OPT = NAME + "/data_optimization"
     FILE_READ_K = DIR_OPT + "/K_optimized.txt"
     DIR = NAME + "/data_rheology"
-    FILE_OUT_SPECTRUM = DIR + "/data_G_abs_spectrum.txt"
+    FILE_OUT_SPECTRUM_STORAGE = DIR + "/data_G_storage_spectrum.txt"
+    FILE_OUT_SPECTRUM_LOSS = DIR + "/data_G_loss_spectrum.txt"
+    FILE_OUT_SPECTRUM_ABS = DIR + "/data_G_abs_spectrum.txt"
     DIR_FIG = DIR + "/figs"
     os.makedirs(DIR_FIG, exist_ok=True)
     FILE_FIG_CURVES = DIR_FIG + "/G_curves.png"
-    FILE_FIG_SPECTRUM = DIR_FIG + "/G_abs_spectrum.svg"
+    FILE_FIG_SPECTRUM_STORAGE = DIR_FIG + "/G_storage_spectrum.svg"
+    FILE_FIG_SPECTRUM_LOSS = DIR_FIG + "/G_loss_spectrum.svg"
+    FILE_FIG_SPECTRUM_ABS = DIR_FIG + "/G_abs_spectrum.svg"
     # ----------------------------------------------------------------------------------------------
     K, N = Read_K(FILE_READ_K)
     # ----------------------------------------------------------------------------------------------
@@ -738,11 +796,59 @@ def plot_modulus(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_
     YTICKS_LABELS = []
     for n in range(PLT_LOWER, PLT_UPPER + 1):
         YTICKS_LABELS.append(n)
+    G_storage = np.zeros((M + 1, N))
+    G_loss = np.zeros((M + 1, N))
     G_abs = np.zeros((M + 1, N))
     for n in range(N):
         FILE_READ = DIR + "/n{0:d}.txt".format(n)
         data = np.loadtxt(FILE_READ)
+        G_storage[:, n] = data[:, 4]
+        G_loss[:, n] = data[:, 5]
         G_abs[:, n] = data[:, 6]
+    # ----------------------------------------------------------------------------------------------
+    plt.figure(figsize=(8, 4))
+    plt.ylabel(r"$\mathrm{\mathbf{log_{10} \bar{\omega}}}$")
+    plt.yticks(np.arange(0, END - START, 100), YTICKS_LABELS)
+
+    plt.imshow(np.log10(G_storage[START:END, :]),
+               cmap="jet",
+               clim=(PLT_MIN_LOG, PLT_MAX_LOG),
+               aspect=ASPECT,
+               origin="lower")
+    plt.colorbar(shrink=0.8,
+                 label=r"$\mathrm{\mathbf{log_{10} \bar{G}'(\bar{\omega})}}$",
+                 ticks=[-1, 0, 1])
+
+    ax = plt.gca()
+    ax.spines["right"].set_color("none")
+    ax.spines["top"].set_color("none")
+    ax.spines["bottom"].set_color("none")
+    plt.tick_params(labelbottom=0, bottom=0, labelleft=1)
+
+    plt.savefig(FILE_FIG_SPECTRUM_STORAGE)
+    plt.close()
+    # ----------------------------------------------------------------------------------------------
+    plt.figure(figsize=(8, 4))
+    plt.ylabel(r"$\mathrm{\mathbf{log_{10} \bar{\omega}}}$")
+    plt.yticks(np.arange(0, END - START, 100), YTICKS_LABELS)
+
+    plt.imshow(np.log10(G_loss[START:END, :]),
+               cmap="jet",
+               clim=(PLT_MIN_LOG, PLT_MAX_LOG),
+               aspect=ASPECT,
+               origin="lower")
+    plt.colorbar(shrink=0.8,
+                 label=r"$\mathrm{\mathbf{log_{10} \bar{G}''(\bar{\omega})}}$",
+                 ticks=[-1, 0, 1])
+
+    ax = plt.gca()
+    ax.spines["right"].set_color("none")
+    ax.spines["top"].set_color("none")
+    ax.spines["bottom"].set_color("none")
+    plt.tick_params(labelbottom=0, bottom=0, labelleft=1)
+
+    plt.savefig(FILE_FIG_SPECTRUM_LOSS)
+    plt.close()
     # ----------------------------------------------------------------------------------------------
     plt.figure(figsize=(8, 4))
     plt.ylabel(r"$\mathrm{\mathbf{log_{10} \bar{\omega}}}$")
@@ -763,10 +869,12 @@ def plot_modulus(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_
     ax.spines["bottom"].set_color("none")
     plt.tick_params(labelbottom=0, bottom=0, labelleft=1)
 
-    plt.savefig(FILE_FIG_SPECTRUM)
+    plt.savefig(FILE_FIG_SPECTRUM_ABS)
     plt.close()
     # ----------------------------------------------------------------------------------------------
-    np.savetxt(FILE_OUT_SPECTRUM, G_abs[START:END, :], fmt="%e")
+    np.savetxt(FILE_OUT_SPECTRUM_STORAGE, G_storage[START:END, :], fmt="%e")
+    np.savetxt(FILE_OUT_SPECTRUM_LOSS, G_loss[START:END, :], fmt="%e")
+    np.savetxt(FILE_OUT_SPECTRUM_ABS, G_abs[START:END, :], fmt="%e")
 # --------------------------------------------------------------------------------------------------
 
 
