@@ -242,8 +242,12 @@ Example:
 The outputs are the followings:
 
     NAME/data_rheology/
+      data_J_storage_spectrum.txt
+      data_J_loss_spectrum.txt
       data_J_abs_spectrum.txt
     NAME/data_rheology/figs/
+      J_storage_spectrum.svg
+      J_loss_spectrum.svg
       J_abs_spectrum.svg
       J_curves.png
 
@@ -272,8 +276,12 @@ Example:
 The outputs are the followings:
 
     NAME/data_rheology/
+      data_G_storage_spectrum.txt
+      data_G_loss_spectrum.txt
       data_G_abs_spectrum.txt
     NAME/data_rheology/figs/
+      G_storage_spectrum.svg
+      G_loss_spectrum.svg
       G_abs_spectrum.svg
       G_curves.png
 
