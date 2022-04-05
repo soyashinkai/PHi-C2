@@ -7,28 +7,6 @@ import click
 # --------------------------------------------------------------------------------------------------
 
 
-def Read_Dumped_Data(FILE_DUMPED):
-    data = np.loadtxt(FILE_DUMPED, delimiter="\t")
-    data[np.isnan(data)] = 0
-    return data
-# --------------------------------------------------------------------------------------------------
-
-
-def Convert_Dumped_Data_into_C(data, RES):
-    Len = data.shape[0]
-    START = data[0, 1]
-    END = data[Len - 1, 1]
-    N = int((END - START) / RES) + 1
-    C = np.zeros((N, N))
-    M = data.shape[0]
-    for m in range(M):
-        i = int((data[m, 0] - START) / RES)
-        j = int((data[m, 1] - START) / RES)
-        C[i, j] = C[j, i] = data[m, 2]
-    return C
-# --------------------------------------------------------------------------------------------------
-
-
 def Calc_C_normalized(C):
     N = C.shape[0]
     C_normalized = np.zeros((N, N))
@@ -212,7 +190,7 @@ def cli():
 
 @cli.command()
 @click.option("--input", "FILE_DUMPED", required=True,
-              help="Input file dumped by Juicertools for a hic file")
+              help="Input contact matrix file dumped by Straw for a hic file")
 @click.option("--res", "RES", type=int, required=True,
               help="Resolution of the bin size")
 @click.option("--plt-max-c", "PLT_MAX_C", type=float, required=True,
@@ -220,7 +198,6 @@ def cli():
 def preprocessing(FILE_DUMPED, RES, PLT_MAX_C):
     DIR, EXT = os.path.splitext(FILE_DUMPED)
     os.makedirs(DIR, exist_ok=True)
-    FILE_OUT_C = DIR + "/C.txt"
     FILE_OUT_C_NORMALIZED = DIR + "/C_normalized.txt"
     FILE_OUT_P_NORMALIZED = DIR + "/P_normalized.txt"
     FILE_FIG_C_NORMALIZED = DIR + "/C_normalized.svg"
@@ -228,12 +205,10 @@ def preprocessing(FILE_DUMPED, RES, PLT_MAX_C):
     plt.rcParams["font.family"] = "Arial"
     plt.rcParams["font.size"] = 36
     # ----------------------------------------------------------------------------------------------
-    data = Read_Dumped_Data(FILE_DUMPED)
-    C = Convert_Dumped_Data_into_C(data, RES)
+    C = np.loadtxt(FILE_DUMPED)
     C_normalized = Calc_C_normalized(C)
     P_normalized = Calc_P(C_normalized, RES)
     # ----------------------------------------------------------------------------------------------
-    np.savetxt(FILE_OUT_C, C, fmt="%e")
     np.savetxt(FILE_OUT_C_NORMALIZED, C_normalized, fmt="%e")
     np.savetxt(FILE_OUT_P_NORMALIZED, P_normalized, fmt="%d\t%e")
     # ----------------------------------------------------------------------------------------------
