@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name="phic",
-    version="2.0.2",
+    version="2.0.3",
     author="Soya SHINKAI",
     author_email="soya.shinkai@riken.jp",
     license="GPL-3.0",
