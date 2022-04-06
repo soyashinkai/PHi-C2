@@ -14,3 +14,5 @@ mzd = hic.getMatrixZoomData(CHR, CHR, "observed", "KR", "BP", RES)
 input_matrix = mzd.getRecordsAsMatrix(START, END, START, END)
 
 np.savetxt("{0:s}.txt".format(NAME), input_matrix, fmt="%e")
+
+print("Contact matrix size is {0:d}x{0:d}".format(input_matrix.shape[0]))
