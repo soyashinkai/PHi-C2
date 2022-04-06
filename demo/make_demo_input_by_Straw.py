@@ -17,7 +17,7 @@ records_list = mzd.getRecords(START, END, START, END)
 np.savetxt("{0:s}.txt".format(NAME), input_matrix, fmt="%e")
 print("Contact matrix size is {0:d}x{0:d}".format(input_matrix.shape[0]))
 
-fp = open("{0:s}_fetch_list.log".format(NAME), "w")
+fp = open("{0:s}_list.txt".format(NAME), "w")
 for i in range(len(records_list)):
     print("{0:d}\t{1:d}\t{2:f}".format(records_list[i].binX, records_list[i].binY, records_list[i].counts),
           file=fp)
