@@ -35,6 +35,7 @@ After the installation of `phic` and downloading of the directory [_demo_](/demo
 
     demo/
       Bonev_ES_observed_KR_chr8_42100000-44500000_res25000bp.txt
+      Bonev_ES_observed_KR_chr8_42100000-44500000_res25000bp_list.txt
       make_demo_input_by_Straw.py
       run.sh
 
