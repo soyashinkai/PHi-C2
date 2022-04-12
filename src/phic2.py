@@ -287,14 +287,18 @@ def optimization(NAME, INIT_K_BACKBONE, ETA, ALPHA, THREADS):
     L = Transform_K_into_L(K)
     lam, Q = np.linalg.eigh(L)
     flag = False
-    for n in range(N-1):
-        if K[n, n+1] < 0:
-            flag= True
+    for n in range(N - 1):
+        if K[n, n + 1] < 0:
+            flag = True
+
     if lam[1] < 0:
         flag = True
+
     if flag:
-        print("Optimized K is physically unrealistic!")
-        print("Please carry out the optimization with different initial parameters.")
+        print("[Caution] Optimization failed! The optimized K is physically unrealistic.")
+        print("[Caution] Please carry out the optimization with different initial parameters.")
+    else:
+        print("Optimization succeeded! The optimized K is physically acceptable.")
 # --------------------------------------------------------------------------------------------------
 
 
