@@ -3,16 +3,18 @@ import hicstraw
 
 HIC_FILE = "http://hicfiles.s3.amazonaws.com/external/bonev/ES_mapq30.hic"
 
-RES = 25000
+
+SUBJECT = "Bonev_mESCs_observed_KR"
 CHR = "8"
 START = 42100000
-END = 44500000
-NAME = "Bonev_ES_observed_KR_chr{0:s}_{1:d}-{2:d}_res{3:d}bp".format(CHR, START, END, RES)
+END = 44525000
+RES = 25000
+NAME = "{0:s}_chr{1:s}_{2:d}-{3:d}_res{4:d}bp".format(SUBJECT, CHR, START, END, RES)
 
 hic = hicstraw.HiCFile(HIC_FILE)
 mzd = hic.getMatrixZoomData(CHR, CHR, "observed", "KR", "BP", RES)
-input_matrix = mzd.getRecordsAsMatrix(START, END, START, END)
-records_list = mzd.getRecords(START, END, START, END)
+input_matrix = mzd.getRecordsAsMatrix(START, END - RES, START, END - RES)
+records_list = mzd.getRecords(START, END - RES, START, END - RES)
 
 np.savetxt("{0:s}.txt".format(NAME), input_matrix, fmt="%e")
 print("Contact matrix size is {0:d}x{0:d}".format(input_matrix.shape[0]))
