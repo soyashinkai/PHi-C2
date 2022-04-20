@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Set input name
-NAME=Bonev_ES_observed_KR_chr8_42100000-44500000_res25000bp
+NAME=Bonev_mESCs_observed_KR_chr8_42100000-44525000_res25000bp
 
 RES=25000
 PLT_MAX_C=0.1

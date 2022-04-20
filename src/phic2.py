@@ -296,7 +296,7 @@ def optimization(NAME, INIT_K_BACKBONE, ETA, ALPHA, THREADS):
 
     if flag:
         print("[Caution] Optimization failed! The optimized K is physically unrealistic.")
-        print("[Caution] Please carry out the optimization with different initial parameters.")
+        print("Please carry out the optimization with different initial parameters.")
     else:
         print("Optimization succeeded! The optimized K is physically acceptable.")
 # --------------------------------------------------------------------------------------------------
