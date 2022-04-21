@@ -129,5 +129,5 @@ dmypy.json
 .pyre/
 
 # demo
-demo/Bonev_ES_observed_KR_chr8_42100000-44525000_res25000bp/
+demo/Bonev_mESCs_observed_KR_chr8_42100000-44525000_res25000bp/
 
