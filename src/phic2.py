@@ -718,9 +718,9 @@ def plot_compliance(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_M
     plt.savefig(FILE_FIG_SPECTRUM_ABS)
     plt.close()
     # ----------------------------------------------------------------------------------------------
-    np.savetxt(FILE_OUT_SPECTRUM_STORAGE, J_storage[START:END:-1, :], fmt="%e")
-    np.savetxt(FILE_OUT_SPECTRUM_LOSS, J_loss[START:END:-1, :], fmt="%e")
-    np.savetxt(FILE_OUT_SPECTRUM_ABS, J_abs[START:END:-1, :], fmt="%e")
+    np.savetxt(FILE_OUT_SPECTRUM_STORAGE, np.flipud(J_storage[START:END, :]), fmt="%e")
+    np.savetxt(FILE_OUT_SPECTRUM_LOSS, np.flipud(J_loss[START:END, :]), fmt="%e")
+    np.savetxt(FILE_OUT_SPECTRUM_ABS, np.flipud(J_abs[START:END, :]), fmt="%e")
 # --------------------------------------------------------------------------------------------------
 
 
@@ -864,9 +864,9 @@ def plot_modulus(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_
     plt.savefig(FILE_FIG_SPECTRUM_ABS)
     plt.close()
     # ----------------------------------------------------------------------------------------------
-    np.savetxt(FILE_OUT_SPECTRUM_STORAGE, G_storage[START:END:-1, :], fmt="%e")
-    np.savetxt(FILE_OUT_SPECTRUM_LOSS, G_loss[START:END:-1, :], fmt="%e")
-    np.savetxt(FILE_OUT_SPECTRUM_ABS, G_abs[START:END:-1, :], fmt="%e")
+    np.savetxt(FILE_OUT_SPECTRUM_STORAGE, np.flipud(G_storage[START:END, :]), fmt="%e")
+    np.savetxt(FILE_OUT_SPECTRUM_LOSS, np.flipud(G_loss[START:END, :]), fmt="%e")
+    np.savetxt(FILE_OUT_SPECTRUM_ABS, np.flipud(G_abs[START:END, :]), fmt="%e")
 # --------------------------------------------------------------------------------------------------
 
 
@@ -933,7 +933,7 @@ def plot_tangent(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, ASPECT):
     plt.savefig(FILE_FIG_SPECTRUM)
     plt.close()
     # ----------------------------------------------------------------------------------------------
-    np.savetxt(FILE_OUT_SPECTRUM, tan[START:END:-1, :], fmt="%e")
+    np.savetxt(FILE_OUT_SPECTRUM, np.flipud(tan[START:END, :]), fmt="%e")
 # --------------------------------------------------------------------------------------------------
 
 
