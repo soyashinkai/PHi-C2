@@ -22,12 +22,19 @@ To visualize the simulated polymer dynamics and conformations, [VMD](https://www
 
 ### Citation
 
+If you use PHi-C2, please cite:
+
+Soya Shinkai, Hiroya Itoga, Koji Kyoda, and Shuichi Onami. (2022).
+**PHi-C2: interpreting Hi-C data as the dynamic 3D genome state.**
+[_bioRxiv_](https://www.biorxiv.org/content/10.1101/2022.05.06.490994).
+
+<!--
 We will submit a manuscript on PHi-C2, in which we dramatically updated the algorithm of the optimization procedure.
 But, the basic framework remains the same in the following papers:
 
 - Soya Shinkai, Masaki Nakagawa, Takeshi Sugawara, Yuichi Togashi, Hiroshi Ochiai, Ryuichiro Nakato, Yuichi Taniguchi, and Shuichi Onami. (2020). **PHi-C: deciphering Hi-C data into polymer dynamics.** [_NAR Genomics and Bioinformatics_ **2** (2) lqaa020](https://doi.org/10.1093/nargab/lqaa020).
 
-- Soya Shinkai, Takeshi Sugawara, Hisashi Miura, Ichiro Hiratani, and Shuichi Onami. (2020). **Microrheology for Hi-C Data Reveals the Spectrum of the Dynamic 3D Genome Organization.** [_Biophysical Journal_ **118** 2220–2228](https://doi.org/10.1016/j.bpj.2020.02.020).
+- Soya Shinkai, Takeshi Sugawara, Hisashi Miura, Ichiro Hiratani, and Shuichi Onami. (2020). **Microrheology for Hi-C Data Reveals the Spectrum of the Dynamic 3D Genome Organization.** [_Biophysical Journal_ **118** 2220–2228](https://doi.org/10.1016/j.bpj.2020.02.020). -->
 
 ### Quick Start
 
