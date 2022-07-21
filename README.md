@@ -144,7 +144,9 @@ The outputs are the followings:
 
     NAME/data_optimization/
       C.svg
+      C_optimized.txt
       Correlation.png
+      Correlation_distance_corrected.png
       Cost.svg
       K.svg
       K_backbone.svg

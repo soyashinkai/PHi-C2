@@ -97,6 +97,39 @@ def Calc_Correlation(A, B, N):
 # --------------------------------------------------------------------------------------------------
 
 
+def Calc_Distance_Corrected_Correlation(A, B, N):
+    P_A = np.zeros(N)
+    P_B = np.zeros(N)
+    for n in range(0, N):
+        for m in range(0, N - n):
+            P_A[n] += A[m, m + n]
+            P_B[n] += B[m, m + n]
+        P_A[n] /= (N - n)
+        P_B[n] /= (N - n)
+    # ----------------------------------------------------------------------------------------------
+    tmp_A = np.zeros((N, N))
+    tmp_B = np.zeros((N, N))
+    for i in range(N):
+        for j in range(i, N):
+            tmp_A[i, j] = tmp_A[j, i] = A[i, j] - P_A[j - i]
+            tmp_B[i, j] = tmp_B[j, i] = B[i, j] - P_B[j - i]
+    # ----------------------------------------------------------------------------------------------
+    list_X = []
+    list_Y = []
+    # ----------------------------------------------------------------------------------------------
+    for i in range(N):
+        for j in range(i + 1, N):
+            list_X.append(tmp_A[i, j])
+            list_Y.append(tmp_B[i, j])
+    # ----------------------------------------------------------------------------------------------
+    X = np.array(list_X)
+    Y = np.array(list_Y)
+    # ----------------------------------------------------------------------------------------------
+    r, p = scipy.stats.pearsonr(X, Y)
+    return r, X, Y
+# --------------------------------------------------------------------------------------------------
+
+
 def Read_K(FILE_READ_K):
     K = np.loadtxt(FILE_READ_K)
     N = K.shape[0]
@@ -295,7 +328,8 @@ def optimization(NAME, INIT_K_BACKBONE, ETA, ALPHA, THREADS):
         flag = True
 
     if flag:
-        print("[Caution] Optimization failed! The optimized K is physically unrealistic.")
+        print(
+            "[Caution] Optimization failed! The optimized K is physically unrealistic.")
         print("Please carry out the optimization with different initial parameters.")
     else:
         print("Optimization succeeded! The optimized K is physically acceptable.")
@@ -323,8 +357,10 @@ def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K_BACKBONE, PLT_MAX_K, PLT_K
     FILE_READ_C = NAME + "/C_normalized.txt"
     FILE_READ_K = DIR_OPT + "/K_optimized.txt"
     FILE_READ_Cost = DIR_OPT + "/optimization.log"
+    FILE_OUT_C_OPT = DIR_OPT + "/C_optimized.txt"
     FILE_OUT_K_BACKBONE = DIR_OPT + "/K_backbone.txt"
     FILE_FIG_CORRELATION = DIR_OPT + "/Correlation.png"
+    FILE_FIG_DC_CORRELATION = DIR_OPT + "/Correlation_distance_corrected.png"
     FILE_FIG_K_BACKBONE = DIR_OPT + "/K_backbone.svg"
     FILE_FIG_C = DIR_OPT + "/C.svg"
     FILE_FIG_K = DIR_OPT + "/K.svg"
@@ -340,8 +376,11 @@ def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K_BACKBONE, PLT_MAX_K, PLT_K
     # ----------------------------------------------------------------------------------------------
     # CALC cost and correlation
     C_optimized = Convert_K_into_C(K, N)
+    np.savetxt(FILE_OUT_C_OPT, C_optimized, fmt="%e")
     Diff, Cost = Calc_Diff_Cost(C_optimized, C_normalized, N)
     r, Optimized, Normalized = Calc_Correlation(C_optimized, C_normalized, N)
+    dcr, Optimized_dcr, Normalized_dcr = Calc_Distance_Corrected_Correlation(
+        C_optimized, C_normalized, N)
     # ----------------------------------------------------------------------------------------------
     P_normalized = Calc_P(C_normalized, RES)
     P_optimized = Calc_P(C_optimized, RES)
@@ -366,14 +405,14 @@ def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K_BACKBONE, PLT_MAX_K, PLT_K
         K_backbone[i, 1] = K[i, i + 1]
     np.savetxt(FILE_OUT_K_BACKBONE, K_backbone, fmt="%d\t%f")
     # ----------------------------------------------------------------------------------------------
-    plt.figure(figsize=(7, 7))
+    plt.figure(figsize=(8, 8))
     plt.axes().set_aspect("equal")
     plt.gca().spines["right"].set_visible(False)
     plt.gca().spines["top"].set_visible(False)
     plt.gca().yaxis.set_ticks_position("left")
     plt.gca().xaxis.set_ticks_position("bottom")
-    plt.title(r"$r$ = {0:.3f}".format(r))
-    plt.xlabel("Optimized", fontweight="bold")
+    plt.title(r"$r$={0:.3f}".format(r))
+    plt.xlabel("PHi-C", fontweight="bold")
     plt.ylabel("Hi-C", fontweight="bold")
     x = np.linspace(0, 1)
     plt.plot(x, x, linestyle="dashed", color="gray", linewidth=3)
@@ -386,7 +425,29 @@ def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K_BACKBONE, PLT_MAX_K, PLT_K
     plt.savefig(FILE_FIG_CORRELATION)
     plt.close()
     # ----------------------------------------------------------------------------------------------
-    plt.figure(figsize=(10, 3))
+    plt.figure(figsize=(10, 10))
+    plt.axes().set_aspect("equal")
+    plt.gca().spines["right"].set_visible(False)
+    plt.gca().spines["top"].set_visible(False)
+    plt.gca().yaxis.set_ticks_position("left")
+    plt.gca().xaxis.set_ticks_position("bottom")
+    plt.title(r"$r'$={0:.3f}".format(dcr))
+    plt.xlabel("PHi-C subtracted the average\nat each genomic distance", fontweight="bold")
+    plt.ylabel("Hi-C subtracted the average\nat each genomic distance", fontweight="bold")
+    x = np.linspace(-0.5, 0.5)
+    plt.plot(x, x, linestyle="dashed", color="gray", linewidth=3)
+    plt.scatter(Optimized_dcr, Normalized_dcr, color="blue", alpha=0.5)
+    plt.xlim(-0.5, 0.5)
+    plt.ylim(-0.5, 0.5)
+    plt.xticks([-0.4, -0.2, 0, 0.2, 0.4])
+    plt.yticks([-0.4, -0.2, 0, 0.2, 0.4])
+    plt.tight_layout()
+    plt.savefig(FILE_FIG_DC_CORRELATION)
+    plt.close()
+    # ----------------------------------------------------------------------------------------------
+    plt.figure(figsize=(20, 6))
+    plt.xlabel(r"index $i$ ({0:d}-bp bins)".format(RES), fontweight="bold")
+    plt.ylabel(r"Nomrlaized $K_{i, i+1}$", fontweight="bold")
     plt.ylim(0, PLT_MAX_K_BACKBONE)
     plt.bar(K_backbone[:, 0], K_backbone[:, 1],
             width=1.0,
@@ -398,7 +459,7 @@ def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K_BACKBONE, PLT_MAX_K, PLT_K
     # ----------------------------------------------------------------------------------------------
     plt.figure(figsize=(10, 10))
     plt.text(N - 1, 0, "Hi-C", fontweight="bold", ha="right", va="top")
-    plt.text(0, N - 1, "PHi-C (Cor. = {0:.3f})".format(r),
+    plt.text(0, N - 1, "PHi-C\n" + r"($r$={0:.3f}, $r'$={1:.3f})".format(r, dcr),
              fontweight="bold", ha="left", va="bottom")
     plt.imshow(C, cmap="magma_r", clim=(0, PLT_MAX_C))
     plt.colorbar(ticks=[0, PLT_MAX_C], shrink=0.5, orientation="vertical",
@@ -409,7 +470,8 @@ def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K_BACKBONE, PLT_MAX_K, PLT_K
     # ----------------------------------------------------------------------------------------------
     plt.figure(figsize=(10, 10))
     plt.imshow(K, cmap="bwr", clim=(-PLT_MAX_K, PLT_MAX_K))
-    plt.colorbar(ticks=[-PLT_MAX_K, 0, PLT_MAX_K], shrink=0.5, orientation="vertical")
+    plt.colorbar(ticks=[-PLT_MAX_K, 0, PLT_MAX_K], shrink=0.5, orientation="vertical",
+                 label=r"Nomrlaized $K_{ij}$")
     plt.axis("off")
     plt.savefig(FILE_FIG_K)
     plt.close()
@@ -423,15 +485,20 @@ def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K_BACKBONE, PLT_MAX_K, PLT_K
     plt.yscale("log")
     plt.xlabel("Genomic distance [bp]", fontweight="bold")
     plt.ylabel("Normalized contact probability", fontweight="bold")
-    plt.plot(P_normalized[1:, 0], P_normalized[1:, 1], label="Hi-C", linewidth=6)
-    plt.plot(P_optimized[1:, 0], P_optimized[1:, 1], label="Optimized", linewidth=3)
+    plt.plot(P_normalized[1:, 0], P_normalized[1:, 1],
+             label="Hi-C", linewidth=6)
+    plt.plot(P_optimized[1:, 0], P_optimized[1:, 1],
+             label="PHi-C", linewidth=3)
     plt.legend(handlelength=1, loc="upper right")
     plt.tight_layout()
     plt.savefig(FILE_FIG_P)
     plt.close()
     # ----------------------------------------------------------------------------------------------
     plt.figure(figsize=(10, 10))
-    plt.hist(K_wo_backbone, bins=PLT_K_DIS_BINS, range=(-PLT_MAX_K, PLT_MAX_K), density=True)
+    plt.xlabel(r"Nomrlaized $K_{ij}$", fontweight="bold")
+    plt.ylabel("Probability density", fontweight="bold")
+    plt.hist(K_wo_backbone, bins=PLT_K_DIS_BINS,
+             range=(-PLT_MAX_K, PLT_MAX_K), density=True)
     plt.xlim(-PLT_MAX_K, PLT_MAX_K)
     plt.ylim(0, PLT_MAX_K_DIS)
     plt.xticks([-PLT_MAX_K, -PLT_MAX_K / 2, 0, PLT_MAX_K / 2, PLT_MAX_K])
@@ -496,7 +563,8 @@ def dynamics(NAME, EPS, INTERVAL, FRAME, SAMPLE, SEED):
                 print("CA\t%f\t%f\t%f" % (Rx[n], Ry[n], Rz[n]), file=fp)
             # --------------------------------------------------------------------------------------
             for step in range(INTERVAL):
-                Rx, Ry, Rz = Integrate_Polymer_Network(Rx, Ry, Rz, L, N, NOISE, F_Coefficient)
+                Rx, Ry, Rz = Integrate_Polymer_Network(
+                    Rx, Ry, Rz, L, N, NOISE, F_Coefficient)
         fp.close()
 # --------------------------------------------------------------------------------------------------
 
@@ -570,7 +638,8 @@ def rheology(NAME, UPPER, LOWER):
             data[m, 3] = np.sqrt(J2)  # |J*|
             data[m, 4] = data[m, 1] / J2  # G'
             data[m, 5] = data[m, 2] / J2  # G''
-            data[m, 6] = np.sqrt(data[m, 4] * data[m, 4] + data[m, 5] * data[m, 5])  # |G*|
+            data[m, 6] = np.sqrt(data[m, 4] * data[m, 4] +
+                                 data[m, 5] * data[m, 5])  # |G*|
             data[m, 7] = data[m, 2] / data[m, 1]  # tanδ
         # ------------------------------------------------------------------------------------------
         FILE_OUT = DIR + "/n{0:d}.txt".format(n)
@@ -718,8 +787,10 @@ def plot_compliance(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_M
     plt.savefig(FILE_FIG_SPECTRUM_ABS)
     plt.close()
     # ----------------------------------------------------------------------------------------------
-    np.savetxt(FILE_OUT_SPECTRUM_STORAGE, np.flipud(J_storage[START:END, :]), fmt="%e")
-    np.savetxt(FILE_OUT_SPECTRUM_LOSS, np.flipud(J_loss[START:END, :]), fmt="%e")
+    np.savetxt(FILE_OUT_SPECTRUM_STORAGE, np.flipud(
+        J_storage[START:END, :]), fmt="%e")
+    np.savetxt(FILE_OUT_SPECTRUM_LOSS, np.flipud(
+        J_loss[START:END, :]), fmt="%e")
     np.savetxt(FILE_OUT_SPECTRUM_ABS, np.flipud(J_abs[START:END, :]), fmt="%e")
 # --------------------------------------------------------------------------------------------------
 
@@ -864,8 +935,10 @@ def plot_modulus(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_
     plt.savefig(FILE_FIG_SPECTRUM_ABS)
     plt.close()
     # ----------------------------------------------------------------------------------------------
-    np.savetxt(FILE_OUT_SPECTRUM_STORAGE, np.flipud(G_storage[START:END, :]), fmt="%e")
-    np.savetxt(FILE_OUT_SPECTRUM_LOSS, np.flipud(G_loss[START:END, :]), fmt="%e")
+    np.savetxt(FILE_OUT_SPECTRUM_STORAGE, np.flipud(
+        G_storage[START:END, :]), fmt="%e")
+    np.savetxt(FILE_OUT_SPECTRUM_LOSS, np.flipud(
+        G_loss[START:END, :]), fmt="%e")
     np.savetxt(FILE_OUT_SPECTRUM_ABS, np.flipud(G_abs[START:END, :]), fmt="%e")
 # --------------------------------------------------------------------------------------------------
 
