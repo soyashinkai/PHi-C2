@@ -1,8 +1,10 @@
+import os
+os.environ["MKL_NUM_THREADS"] = "2"
+os.environ["OMP_NUM_THREADS"] = "2"
 import numpy as np
 import matplotlib.pyplot as plt
 import numba
 import scipy.stats
-import os
 import click
 # --------------------------------------------------------------------------------------------------
 
@@ -279,11 +281,7 @@ def preprocessing(FILE_DUMPED, RES, PLT_MAX_C):
               help="Learning rate  [default=1e-4]")
 @click.option("--stop-condition-parameter", "ALPHA", type=float, default=1e-4,
               help="Parameter for the stop condition  [default=1e-4]")
-@click.option("--threads", "THREADS", default="1",
-              help="The number of threads  [default=1]")
-def optimization(NAME, INIT_K_BACKBONE, ETA, ALPHA, THREADS):
-    os.environ["MKL_NUM_THREADS"] = THREADS
-    os.environ["OMP_NUM_THREADS"] = THREADS
+def optimization(NAME, INIT_K_BACKBONE, ETA, ALPHA):
     STOP_DELTA = ETA * ALPHA
     # ----------------------------------------------------------------------------------------------
     FILE_READ = NAME + "/C_normalized.txt"
