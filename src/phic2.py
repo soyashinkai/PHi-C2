@@ -785,7 +785,7 @@ def plot_compliance(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_M
     plt.savefig(FILE_FIG_SPECTRUM_ABS)
     plt.close()
     # ----------------------------------------------------------------------------------------------
-    np.savetxt(FILE_OUT_SPECTRUM_STORAGE, J_storage[START:END, :]), fmt="%e")
+    np.savetxt(FILE_OUT_SPECTRUM_STORAGE, J_storage[START:END, :], fmt="%e")
     np.savetxt(FILE_OUT_SPECTRUM_LOSS, J_loss[START:END, :], fmt="%e")
     np.savetxt(FILE_OUT_SPECTRUM_ABS, J_abs[START:END, :], fmt="%e")
 # --------------------------------------------------------------------------------------------------
