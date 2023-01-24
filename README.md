@@ -26,7 +26,7 @@ If you use PHi-C2, please cite:
 
 Soya Shinkai, Hiroya Itoga, Koji Kyoda, and Shuichi Onami. (2022).
 **PHi-C2: interpreting Hi-C data as the dynamic 3D genome state.**
-[_bioRxiv_](https://www.biorxiv.org/content/10.1101/2022.05.06.490994).
+[_Bioinformatics_ **38**(21) 4984–4986](https://academic.oup.com/bioinformatics/advance-article/doi/10.1093/bioinformatics/btac613/6695219).
 
 <!--
 We will submit a manuscript on PHi-C2, in which we dramatically updated the algorithm of the optimization procedure.
