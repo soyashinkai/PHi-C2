@@ -82,10 +82,11 @@ All output files of `phic` will be stored in the newly made directory _NAME_.
     phic preprocessing [OPTIONS]
 
     Options:
-      --input     TEXT      Input contact matrix file dumped by Straw for a hic file  [required]
-      --res       INTEGER   Resolution of the bin size  [required]
-      --plt-max-c FLOAT     Maximum value of contact map  [required]
-      --help                Show this message and exit.
+      --input               TEXT      Input contact matrix file dumped by Straw for a hic file  [required]
+      --res                 INTEGER   Resolution of the bin size  [required]
+      --plt-max-c           FLOAT     Maximum value of contact map  [required]
+      --for-high-resolution INTEGER   Normalization of contact map for high-resolution case (ex. 1-kb, 500-bp, 200-bp) [default=0]
+      --help                          Show this message and exit.
 
 The outputs are the followings:
 
@@ -216,6 +217,7 @@ Example:
 The outputs are the followings:
 
     NAME/data_rheology/
+      data_normalized_omega1.txt
       n{BEAD-NUMBER}.txt
 
 Example:

@@ -12,13 +12,31 @@ import click
 def Calc_C_normalized(C):
     N = C.shape[0]
     C_normalized = np.zeros((N, N))
+    # Diagonal elements
     for i in range(N):
-        for j in range(i, N):
+        C_normalized[i, i] = 1
+    # Non-diagonal elements
+    for i in range(N-1):
+        for j in range(i+1, N):
             if C[i, i] > 0 and C[j, j] > 0:
-                C_normalized[i, j] = C[i, j] / np.sqrt(C[i, i] * C[j, j])
-                C_normalized[j, i] = C_normalized[i, j]
-            else:
-                C_normalized[j, i] = C_normalized[i, j] = 0
+                tmp = C[i, j] / np.sqrt(C[i, i] * C[j, j])
+                C_normalized[i, j] = C_normalized[j, i] = tmp
+    return C_normalized
+# --------------------------------------------------------------------------------------------------
+
+
+def Calc_C_normalized_high_resolution(C):
+    N = C.shape[0]
+    C_normalized = np.zeros((N, N))
+    # Diagonal elements
+    for i in range(N):
+        C_normalized[i, i] = 1
+    # Non-diagonal elements
+    for i in range(N-1):
+        for j in range(i+1, N):
+            if (C[i, i] + C[i, i+1] + C[i+1, i+1]) > 0 and (C[j-1, j-1] + C[j-1, j] + C[j, j]) > 0:
+                tmp = C[i, j] / np.sqrt((C[i, i] + C[i, i+1] + C[i+1, i+1]) * (C[j-1, j-1] + C[j-1, j] + C[j, j]))
+                C_normalized[i, j] = C_normalized[j, i] = tmp
     return C_normalized
 # --------------------------------------------------------------------------------------------------
 
@@ -230,7 +248,9 @@ def cli():
               help="Resolution of the bin size")
 @click.option("--plt-max-c", "PLT_MAX_C", type=float, required=True,
               help="Maximum value of contact map")
-def preprocessing(FILE_DUMPED, RES, PLT_MAX_C):
+@click.option("--for-high-resolution", "HIGH_RESOLUTION", type=int, default=0,
+              help="Normalization of contact map for high-resolution case (ex. 1-kb, 500-bp, 200-bp)  [default=0]")
+def preprocessing(FILE_DUMPED, RES, PLT_MAX_C, HIGH_RESOLUTION):
     DIR, EXT = os.path.splitext(FILE_DUMPED)
     os.makedirs(DIR, exist_ok=True)
     FILE_OUT_C_NORMALIZED = DIR + "/C_normalized.txt"
@@ -241,7 +261,10 @@ def preprocessing(FILE_DUMPED, RES, PLT_MAX_C):
     plt.rcParams["font.size"] = 36
     # ----------------------------------------------------------------------------------------------
     C = np.loadtxt(FILE_DUMPED)
-    C_normalized = Calc_C_normalized(C)
+    if HIGH_RESOLUTION:
+        C_normalized = Calc_C_normalized_high_resolution(C)
+    else:
+        C_normalized = Calc_C_normalized(C)
     P_normalized = Calc_P(C_normalized, RES)
     # ----------------------------------------------------------------------------------------------
     np.savetxt(FILE_OUT_C_NORMALIZED, C_normalized, fmt="%e")
@@ -619,6 +642,11 @@ def rheology(NAME, UPPER, LOWER):
     K, N = Read_K(FILE_READ_K)
     L = Transform_K_into_L(K)
     lam, Q = np.linalg.eigh(L)
+    lam[0] = 0
+    omega_1 = 6 * np.pi * lam[1]
+    with open("{0:s}/data_normalized_omega1.txt".format(DIR), "w") as fp:
+        print("ω1 = %e" % omega_1, file=fp)
+        print("log10(ω1) = %f" % (np.log10(omega_1)), file=fp)
     # ----------------------------------------------------------------------------------------------
     for n in range(N):
         data = np.zeros((M + 1, 8))
