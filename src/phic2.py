@@ -1032,5 +1032,130 @@ def plot_tangent(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, ASPECT):
 # -----------------------------------------------------------------------------
 
 
+@cli.command()
+@click.option("--name", "NAME", required=True,
+              help="Target directory name")
+@click.option("--upper", "UPPER", type=int, default=5,
+              help="Upper value of the exponent of the normalized time  [default=5]")
+@click.option("--lower", "LOWER", type=int, default=-1,
+              help="Lower value of the exponent of the normalized time  [default=-1]")
+def msd(NAME, UPPER, LOWER):
+    M = 100 * (UPPER - LOWER)
+    # -------------------------------------------------------------------------
+    DIR_OPT = NAME + "/data_optimization"
+    FILE_READ_K = DIR_OPT + "/K_optimized.txt"
+    DIR = NAME + "/data_MSD"
+    os.makedirs(DIR, exist_ok=True)
+    # -------------------------------------------------------------------------
+    K, N = Read_K(FILE_READ_K)
+    L = Transform_K_into_L(K)
+    lam, Q = np.linalg.eigh(L)
+    # -------------------------------------------------------------------------
+    for n in range(N):
+        data = np.zeros((M + 1, 2))
+        for m in range(M + 1):
+            # -----------------------------------------------------------------
+            t = 10**(0.01 * (m + LOWER * 100))
+            data[m, 0] = t
+            # -----------------------------------------------------------------
+            for p in range(1, N):
+                data[m, 1] += 2 * Q[n, p] * Q[n, p] / lam[p] * (1 - np.exp(- 3 * lam[p] * t))
+        # ---------------------------------------------------------------------
+        FILE_OUT = DIR + "/n{0:d}.txt".format(n)
+        np.savetxt(FILE_OUT, data, fmt="%e")
+# -----------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option("--name", "NAME", required=True,
+              help="Target directory name")
+@click.option("--upper", "UPPER", type=int, default=5,
+              help="Upper value of the exponent of the normalized time  [default=5]")
+@click.option("--lower", "LOWER", type=int, default=-1,
+              help="Lower value of the exponent of the normalized time  [default=-1]")
+@click.option("--plt-upper", "PLT_UPPER", type=int, required=True,
+              help="Upper value of the exponent of the normalized time in the spectrum")
+@click.option("--plt-lower", "PLT_LOWER", type=int, required=True,
+              help="Lower value of the exponent of the normalized time in the spectrum")
+@click.option("--plt-max-log", "PLT_MAX_LOG", type=float, required=True,
+              help="Maximum value of log10 MSD")
+@click.option("--plt-min-log", "PLT_MIN_LOG", type=float, required=True,
+              help="Minimum value of log10 MSD")
+@click.option("--aspect", "ASPECT", type=float, default=0.8,
+              help="Aspect ratio of the spectrum  [default=0.8]")
+def plot_msd(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_LOG, ASPECT):
+    DIR_OPT = NAME + "/data_optimization"
+    FILE_READ_K = DIR_OPT + "/K_optimized.txt"
+    DIR = NAME + "/data_MSD"
+    FILE_OUT_SPECTRUM_MSD = DIR + "/data_MSD_spectrum.txt"
+    DIR_FIG = DIR + "/figs"
+    os.makedirs(DIR_FIG, exist_ok=True)
+    FILE_FIG_CURVES = DIR_FIG + "/MSD_curves.png"
+    FILE_FIG_SPECTRUM_MSD = DIR_FIG + "/MSD_spectrum.svg"
+    # -------------------------------------------------------------------------
+    K, N = Read_K(FILE_READ_K)
+    # -------------------------------------------------------------------------
+    plt.rcParams["font.family"] = "Arial"
+    plt.rcParams["font.size"] = 36
+    # -------------------------------------------------------------------------
+    plt.figure(figsize=(12, 9))
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.xlim(10**(LOWER), 10**(UPPER))
+    plt.xlabel(r"$\mathrm{\mathbf{\bar{t}}}$")
+    plt.ylabel(r"$\mathrm{\mathbf{\overline{MSD}(\bar{t})}}$")
+    for n in range(N):
+        FILE_READ = DIR + "/n{0:d}.txt".format(n)
+        data = np.loadtxt(FILE_READ)
+        plt.plot(data[:, 0], data[:, 1], linewidth=1, color="green", alpha=0.1)
+    plt.gca().spines["right"].set_visible(False)
+    plt.gca().spines["top"].set_visible(False)
+    plt.gca().yaxis.set_ticks_position("left")
+    plt.gca().xaxis.set_ticks_position("bottom")
+    plt.tight_layout()
+    plt.savefig(FILE_FIG_CURVES)
+    plt.close()
+    # -------------------------------------------------------------------------
+    plt.rcParams["font.family"] = "Arial"
+    plt.rcParams["font.size"] = 24
+    # -------------------------------------------------------------------------
+    M = 100 * (UPPER - LOWER)
+    START = 100 * (PLT_LOWER - LOWER)
+    END = 100 * (PLT_UPPER - LOWER) + 1
+    YTICKS_LABELS = []
+    for n in range(PLT_LOWER, PLT_UPPER + 1):
+        YTICKS_LABELS.append(n)
+    MSD = np.zeros((M + 1, N))
+    for n in range(N):
+        FILE_READ = DIR + "/n{0:d}.txt".format(n)
+        data = np.loadtxt(FILE_READ)
+        MSD[:, n] = data[:, 1]
+    # -------------------------------------------------------------------------
+    plt.figure(figsize=(8, 4))
+    plt.ylabel(r"$\mathrm{\mathbf{log_{10} \bar{t}}}$")
+    plt.yticks(np.arange(0, END - START, 100), YTICKS_LABELS)
+
+    plt.imshow(np.log10(MSD[START:END, :]),
+               cmap="jet",
+               clim=(PLT_MIN_LOG, PLT_MAX_LOG),
+               aspect=ASPECT)
+    # origin="lower")
+    plt.colorbar(shrink=0.8,
+                 label=r"$\mathrm{\mathbf{log_{10} \overline{MSD}(\bar{t})}}$",
+                 ticks=[0, 1, 2])
+
+    ax = plt.gca()
+    ax.spines["right"].set_color("none")
+    ax.spines["top"].set_color("none")
+    ax.spines["bottom"].set_color("none")
+    plt.tick_params(labelbottom=0, bottom=0, labelleft=1)
+
+    plt.savefig(FILE_FIG_SPECTRUM_MSD)
+    plt.close()
+    # -------------------------------------------------------------------------
+    np.savetxt(FILE_OUT_SPECTRUM_MSD, MSD[START:END, :], fmt="%e")
+# -----------------------------------------------------------------------------
+
+
 if __name__ == '__main__':
     cli()
