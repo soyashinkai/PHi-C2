@@ -69,6 +69,9 @@ Here, `Bonev_ES_observed_KR_chr8_42100000-44525000_res25000bp.txt` is an input f
       |-->  plot-optimization
       |-->  dynamics
       |-->  sampling
+      |-->  msd
+      |       |--> plot-msd
+      |
       |-->  rheology
               |--> plot-compliance
               |--> plot-modulus
