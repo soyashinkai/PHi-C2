@@ -2,6 +2,10 @@
 PHi-C2 allows for a physical interpretation of a Hi-C contact matrix.
 The `phic` package includes a suite of command line tools.
 
+![PyPI Downloads](https://static.pepy.tech/badge/phic)
+![PyPI Downloads](https://static.pepy.tech/badge/phic/month)
+![PyPI Downloads](https://static.pepy.tech/badge/phic/week)
+
 <img src="/img/fig0.svg">
 
 ### Installation
@@ -11,10 +15,6 @@ Install `phic` from PyPI using pip:
     pip install phic
 
 Without preparing a Python environment, PHi-C2 rus on [Google Colab](https://bit.ly/3rlptGI).
-
-![PyPI Downloads](https://static.pepy.tech/badge/phic)
-![PyPI Downloads](https://static.pepy.tech/badge/phic/month)
-![PyPI Downloads](https://static.pepy.tech/badge/phic/week)
 
 ### Requirements
 - PHi-C2 is based on `python3`.
