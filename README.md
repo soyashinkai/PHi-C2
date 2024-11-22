@@ -12,7 +12,6 @@ Install `phic` from PyPI using pip:
 
 Without preparing a Python environment, PHi-C2 rus on [Google Colab](https://bit.ly/3rlptGI).
 
-### Installs
 ![PyPI Downloads](https://static.pepy.tech/badge/phic)
 ![PyPI Downloads](https://static.pepy.tech/badge/phic/month)
 ![PyPI Downloads](https://static.pepy.tech/badge/phic/week)
