@@ -1,25 +1,36 @@
 #!/bin/bash
 
-# Set input name
-NAME=Bonev_mESCs_observed_KR_chr8_42100000-44525000_res25000bp
+# Set Hi-C file (.hic format)
+HIC="http://hicfiles.s3.amazonaws.com/external/bonev/ES_mapq30.hic"
 
+CHR="8"
+START=42100000
+END=44525000
 RES=25000
 PLT_MAX_C=0.1
 
 # Run the preprocessing
-phic preprocessing --input ${NAME}.txt --res ${RES} --plt-max-c ${PLT_MAX_C}
+phic preprocessing --input ${HIC} --res ${RES} --plt-max-c ${PLT_MAX_C} --chr ${CHR} --grs ${START} --gre ${END} --norm KR --tolerance 0.6
+
+NAME="ES_mapq30_KR_chr8_42100000-44525000_res25000bp"
 
 # Run the optimization
 phic optimization --name ${NAME}
 
 # Plot the optimized results
-phic plot-optimization --name ${NAME} --res ${RES} --plt-max-c ${PLT_MAX_C} --plt-max-k-backbone 1.0 --plt-max-k 0.1 --plt-k-dis-bins 200 --plt-max-k-dis 100
+phic plot-optimization --name ${NAME} --res ${RES} --plt-max-c ${PLT_MAX_C} --plt-max-k 0.1
 
 # Run the 4D dynamics simulation
 phic dynamics --name ${NAME} --interval 100 --frame 1000
 
 # Run the 3D conformation sampleing
 phic sampling --name ${NAME} --sample 1000
+
+# Calculate the MSDs
+phic msd --name ${NAME}
+
+# Plot the spectrum of the MSDs
+phic plot-msd --name ${NAME} --plt-upper 3 --plt-lower 0 --plt-max-log 2.0 --plt-min-log 0.5 --aspect 0.2
 
 # Calculate the rheology features
 phic rheology --name ${NAME}

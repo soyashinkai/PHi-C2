@@ -5,11 +5,11 @@ with open("README.md", "r") as fh:
 
 setup(
     name="phic",
-    version="2.0.13",
-    author="Soya SHINKAI",
+    version="2.1.0",
+    author="Soya SHINKAI and Soya HAGIWARA",
     author_email="soya.shinkai@riken.jp",
     license="GPL-3.0",
-    description="Polymer dynamics deciphered from Hi-C data",
+    description="Polymer dynamics simulation from Hi-C data",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/soyashinkai/PHi-C2",
@@ -21,7 +21,7 @@ setup(
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
         "Operating System :: OS Independent",
     ],
-    install_requires=["numpy", "matplotlib", "scipy", "numba", "click", ],
+    install_requires=["numpy", "matplotlib", "scipy", "numba", "click", "pandas", "hic-straw",],
     entry_points={
         "console_scripts": [
             "phic = src.phic2:cli",

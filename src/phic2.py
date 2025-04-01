@@ -6,10 +6,11 @@ import matplotlib.pyplot as plt
 import numba
 import scipy.stats
 import click
+import hicstraw # for version >= 2.1.0
+import pandas as pd # for version >= 2.1.0
 # -----------------------------------------------------------------------------
 
-
-def Calc_C_normalized(C):
+def calc_C_normalized(C):
     N = C.shape[0]
     C_normalized = np.zeros((N, N))
     # Diagonal elements
@@ -24,8 +25,7 @@ def Calc_C_normalized(C):
     return C_normalized
 # -----------------------------------------------------------------------------
 
-
-def Calc_C_normalized_high_resolution(C):
+def calc_C_normalized_high_resolution(C):
     N = C.shape[0]
     C_normalized = np.zeros((N, N))
     # Diagonal elements
@@ -40,27 +40,30 @@ def Calc_C_normalized_high_resolution(C):
     return C_normalized
 # -----------------------------------------------------------------------------
 
-
-def Calc_P(C, RES):
+def calc_Ps(C, RES):
     N = C.shape[0]
-    P = np.zeros((N, 2))
-    for n in range(0, N):
+    P = np.full((N, 2), np.nan)
+    for n in range(N):
         P[n, 0] = RES * n
-        for m in range(0, N - n):
-            P[n, 1] += C[m, m + n]
-        P[n, 1] /= (N - n)
+
+        C_elements = []
+        for i in range(N-n):
+            C_elements.append(C[i, i+n])
+
+        C_elements = [x for x in C_elements if not np.isnan(x)]
+        
+        if C_elements:
+            P[n, 1] = np.mean(C_elements)            
     return P
 # -----------------------------------------------------------------------------
 
-
-def Read_Normalized_C(FILE_READ):
+def read_normalized_C(FILE_READ):
     C = np.loadtxt(FILE_READ)
     N = C.shape[0]
     return C, N
 # -----------------------------------------------------------------------------
 
-
-def Set_Init_K(N, INIT_K_BACKBONE):
+def set_init_K(N, INIT_K_BACKBONE):
     K = np.zeros((N, N))
     for i in range(N - 1):
         j = i + 1
@@ -68,9 +71,8 @@ def Set_Init_K(N, INIT_K_BACKBONE):
     return K
 # -----------------------------------------------------------------------------
 
-
 @numba.jit(nopython=True)
-def Convert_K_into_C(K, N):
+def convert_K_into_C(K, N):
     # K to Laplacian matrix
     d = np.sum(K, axis=0)
     D = np.diag(d)
@@ -80,6 +82,8 @@ def Convert_K_into_C(K, N):
     inv_lam = 1 / lam   # inverse of the eigenvalues
     inv_lam[0] = 0
     inv_Lam = np.diag(inv_lam)
+    # All eigenvalues have to be positive
+    error_flag = lam[0] < -1e-10
     # L to M
     M = np.dot(Q, np.dot(inv_Lam, Q.T))
     # M to Σ^2
@@ -88,84 +92,62 @@ def Convert_K_into_C(K, N):
     Sigma2 = (A + A.T - 2 * M) / 3
     # Σ^2 to C
     C = (1 + Sigma2)**(-1.5)
-    return C
+    return C, error_flag
 # -----------------------------------------------------------------------------
 
-
 @numba.jit(nopython=True)
-def Calc_Diff_Cost(A, B, N):
+def calc_diff_Cost(A, B, N):
     Diff = A - B
     Cost = np.sqrt(np.trace(np.dot(Diff.T, Diff))) / N
     return Diff, Cost
 # -----------------------------------------------------------------------------
 
-
-def Calc_Correlation(A, B, N):
-    list_X = []
-    list_Y = []
+def calc_correlation(A, B, N):
+    upper_indices = np.triu_indices(N, k=1)
+    X = A[upper_indices]
+    Y = B[upper_indices]
+    valid_indices = ~np.isnan(X)
+    X_filtered = X[valid_indices]
+    Y_filtered = Y[valid_indices]
     # -------------------------------------------------------------------------
-    for i in range(N):
-        for j in range(i + 1, N):
-            list_X.append(A[i, j])
-            list_Y.append(B[i, j])
-    # -------------------------------------------------------------------------
-    X = np.array(list_X)
-    Y = np.array(list_Y)
-    # -------------------------------------------------------------------------
-    r, p = scipy.stats.pearsonr(X, Y)
-    return r, X, Y
+    r, p = scipy.stats.pearsonr(X_filtered, Y_filtered)
+    return r, X_filtered, Y_filtered
 # -----------------------------------------------------------------------------
 
-
-def Calc_Distance_Corrected_Correlation(A, B, N):
-    P_A = np.zeros(N)
-    P_B = np.zeros(N)
-    for n in range(0, N):
-        for m in range(0, N - n):
-            P_A[n] += A[m, m + n]
-            P_B[n] += B[m, m + n]
-        P_A[n] /= (N - n)
-        P_B[n] /= (N - n)
-    # -------------------------------------------------------------------------
+def calc_distance_corrected_correlation(A, B, N, P_A, P_B):
     tmp_A = np.zeros((N, N))
     tmp_B = np.zeros((N, N))
     for i in range(N):
-        for j in range(i, N):
-            tmp_A[i, j] = tmp_A[j, i] = A[i, j] - P_A[j - i]
-            tmp_B[i, j] = tmp_B[j, i] = B[i, j] - P_B[j - i]
+        for j in range(i+1, N):
+            if A[i, j] != np.nan:
+                tmp_A[i, j] = A[i, j] - P_A[j - i]
+                tmp_B[i, j] = B[i, j] - P_B[j - i]
     # -------------------------------------------------------------------------
-    list_X = []
-    list_Y = []
+    upper_indices = np.triu_indices(N, k=1)
+    X = tmp_A[upper_indices]
+    Y = tmp_B[upper_indices]
+    valid_indices = ~np.isnan(X)
+    X_filtered = X[valid_indices]
+    Y_filtered = Y[valid_indices]
     # -------------------------------------------------------------------------
-    for i in range(N):
-        for j in range(i + 1, N):
-            list_X.append(tmp_A[i, j])
-            list_Y.append(tmp_B[i, j])
-    # -------------------------------------------------------------------------
-    X = np.array(list_X)
-    Y = np.array(list_Y)
-    # -------------------------------------------------------------------------
-    r, p = scipy.stats.pearsonr(X, Y)
-    return r, X, Y
+    r, p = scipy.stats.pearsonr(X_filtered, Y_filtered)
+    return r, X_filtered, Y_filtered
 # -----------------------------------------------------------------------------
 
-
-def Read_K(FILE_READ_K):
+def read_K(FILE_READ_K):
     K = np.loadtxt(FILE_READ_K)
     N = K.shape[0]
     return K, N
 # -----------------------------------------------------------------------------
 
-
-def Transform_K_into_L(K):
+def transform_K_into_L(K):
     d = np.sum(K, axis=0)
     D = np.diag(d)
     L = D - K
     return L
 # -----------------------------------------------------------------------------
 
-
-def Equilibrium_Conformation_of_Normal_Coordinates(lam, N):
+def equilibrium_conformation_of_normal_coordinates(lam, N):
     Xx = np.zeros(N)
     Xy = np.zeros(N)
     Xz = np.zeros(N)
@@ -177,16 +159,14 @@ def Equilibrium_Conformation_of_Normal_Coordinates(lam, N):
     return Xx, Xy, Xz
 # -----------------------------------------------------------------------------
 
-
-def Convert_X_to_R(Xx, Xy, Xz, Q):
+def convert_X_to_R(Xx, Xy, Xz, Q):
     Rx = np.dot(Q, Xx)
     Ry = np.dot(Q, Xy)
     Rz = np.dot(Q, Xz)
     return Rx, Ry, Rz
 # -----------------------------------------------------------------------------
 
-
-def Integrate_Polymer_Network(x, y, z, L, N, NOISE, F_Coefficient):
+def integrate_polymer_network(x, y, z, L, N, NOISE, F_Coefficient):
     noise_x = NOISE * np.random.randn(N)
     noise_y = NOISE * np.random.randn(N)
     noise_z = NOISE * np.random.randn(N)
@@ -213,8 +193,7 @@ def Integrate_Polymer_Network(x, y, z, L, N, NOISE, F_Coefficient):
     return X, Y, Z
 # -----------------------------------------------------------------------------
 
-
-def Write_Psfdata(DIR, NAME, N):
+def write_psfdata(DIR, NAME, N):
     FILE_PSF = DIR + "/polymer_N{0:d}.psf".format(N)
     fp = open(FILE_PSF, "w")
     print("PSF\n\n       1 !NTITLE\n REMARKS %s\n" % NAME, file=fp)
@@ -234,197 +213,108 @@ def Write_Psfdata(DIR, NAME, N):
     fp.close()
 # -----------------------------------------------------------------------------
 
+def make_input_contact_matrix(FILE_INPUT, RES, CHR, START, END, NORM):
+    NAME, EXT = os.path.splitext(os.path.basename(FILE_INPUT))
+    
+    if EXT == ".hic": # for version >= 2.1.0
+        if not (isinstance(START, int) and isinstance(END, int)): # for the whole single chromosome
+            # Set START and END for the target chromosome ID
+            hic = hicstraw.HiCFile(FILE_INPUT)
+            START = int(0)
+            for chrom in hic.getChromosomes():
+                if chrom.name == CHR:
+                    END = chrom.length
+                    break
+            # Set an input raw contact matrix with nan-values
+            N_input = int(END / RES) + 1
+            C_input = np.full((N_input, N_input), np.nan)
+            result = hicstraw.straw("observed", NORM, FILE_INPUT, CHR, CHR, "BP", RES)
+            for k in range(len(result)):
+                l = int(result[k].binX / RES)
+                m = int(result[k].binY / RES)
+                C_input[l, m] = C_input[m, l] = result[k].counts
+            # Set the name of the working directory
+            DIR = "{0:s}_{1:s}_chr{2:s}_res{3:d}bp".format(NAME, NORM, CHR, RES)
+        else:
+            # Set an input raw contact matrix with nan-values
+            N_input = int((END - START) / RES)
+            C_input = np.full((N_input, N_input), np.nan)
+            ROI = "{0:s}:{1:d}:{2:d}".format(CHR, START, END - RES)
+            result = hicstraw.straw("observed", NORM, FILE_INPUT, ROI, ROI, "BP", RES)
+            for k in range(len(result)):
+                l = int((result[k].binX - START) / RES)
+                m = int((result[k].binY - START) / RES)
+                C_input[l, m] = C_input[m, l] = result[k].counts
+            # Set the name of the working directory
+            DIR = "{0:s}_{1:s}_chr{2:s}_{3:d}-{4:d}_res{5:d}bp".format(NAME, NORM, CHR, START, END, RES)
+    else: # for version <= 2.0.13
+        print("Version 2.1.0 and above no longer support input in formats other than .hic.")
 
-@click.group()
-def cli():
-    pass
+    os.makedirs(DIR, exist_ok=True)
+    return C_input, N_input, DIR, START, END
 # -----------------------------------------------------------------------------
 
+def remove_invalid_segments(C_input, N_input, TOLERANCE):
+    nan_ratio = np.isnan(C_input).sum(axis=1) / N_input
+    nan_indices = np.where(nan_ratio > TOLERANCE)[0]
 
-@cli.command()
-@click.option("--input", "FILE_DUMPED", required=True,
-              help="Input contact matrix file dumped by Straw for a hic file")
-@click.option("--res", "RES", type=int, required=True,
-              help="Resolution of the bin size")
-@click.option("--plt-max-c", "PLT_MAX_C", type=float, required=True,
-              help="Maximum value of contact map")
-@click.option("--for-high-resolution", "HIGH_RESOLUTION", type=int, default=0,
-              help="Normalization of contact map for high-resolution case (ex. 1-kb, 500-bp, 200-bp)  [default=0]")
-def preprocessing(FILE_DUMPED, RES, PLT_MAX_C, HIGH_RESOLUTION):
-    DIR, EXT = os.path.splitext(FILE_DUMPED)
-    os.makedirs(DIR, exist_ok=True)
-    FILE_OUT_C_NORMALIZED = DIR + "/C_normalized.txt"
-    FILE_OUT_P_NORMALIZED = DIR + "/P_normalized.txt"
-    FILE_FIG_C_NORMALIZED = DIR + "/C_normalized.svg"
-    FILE_FIG_P_NORMALIZED = DIR + "/P_normalized.svg"
+    C_input_nan_filtered = np.delete(np.delete(C_input, nan_indices, axis=0), nan_indices, axis=1)
+    C_for_phic = np.nan_to_num(C_input_nan_filtered, nan=0)
+    N_for_phic = C_for_phic.shape[0]
+
+    return C_for_phic, N_for_phic, nan_indices
+# -----------------------------------------------------------------------------
+
+def write_meta_data(DIR, FILE_INPUT, NORM, CHR, START, END, RES, N_input, N_for_phic, nan_indices, TOLERANCE):
+    DIR_META = DIR + "/_meta_data"
+    os.makedirs(DIR_META, exist_ok=True)
+
+    with open(DIR_META + "/_fetched_data_info.txt", "w") as file:
+        file.write(f"filename,{FILE_INPUT}\n")
+        file.write(f"normalization,{NORM}\n")
+        file.write(f"chromosome ID,{CHR}\n")
+        file.write(f"start genomic position,{START}\n")
+        file.write(f"end genomic position,{END}\n")
+        file.write(f"resolution,{RES}\n")
+        file.write(f"input contact matrix size,{N_input}x{N_input}\n")
+        file.write(f"phic contact matrix size,{N_for_phic}x{N_for_phic}\n")
+        file.write(f"tolerance,{TOLERANCE}\n")
+
+    with open(DIR_META + "/_removed_segments.txt", "w") as file:
+        file.write(f"index,chrom,chromStart,chromEnd\n")
+        for i in range(len(nan_indices)):
+            grs = START + nan_indices[i] * RES
+            gre = START + (nan_indices[i] + 1) * RES
+            file.write(f"{nan_indices[i]},{CHR},{grs},{gre}\n")
+
+    all_indices = list(range(N_input))
+    valid_indices = list(set(all_indices) - set(nan_indices))
+    with open(DIR_META + "/_remaining_segments.txt", "w") as file:
+        file.write(f"index,chrom,chromStart,chromEnd,new index\n")
+        for i in range(len(valid_indices)):
+            grs = START + valid_indices[i] * RES
+            gre = START + (valid_indices[i] + 1) * RES
+            file.write(f"{valid_indices[i]},{CHR},{grs},{gre},{i}\n")
+# -----------------------------------------------------------------------------
+
+def write_optimizatioin_meta_data(DIR, INIT_K_BACKBONE, ETA, ALPHA):
+    DIR_META = DIR + "/_meta_data"
+    os.makedirs(DIR_META, exist_ok=True)
+
+    with open(DIR_META + "/_optimization_hyper_parameters.txt", "w") as file:
+        file.write(f"initial K along backbone,{INIT_K_BACKBONE}\n")
+        file.write(f"learning rate,{ETA:.2e}\n")
+        file.write(f"stop condition parameter,{ALPHA:.2e}\n")
+# -----------------------------------------------------------------------------
+
+def calc_plot_correlations(C_optimized, C_normalized, N, P_optimized, P_normalized, DIR_OPT):
+    r, Optimized, Normalized = calc_correlation(C_optimized, C_normalized, N)
+    dcr, Optimized_dcr, Normalized_dcr = calc_distance_corrected_correlation(C_optimized, C_normalized, N, P_optimized[:, 1], P_normalized[:, 1])
+    # -------------------------------------------------------------------------
     plt.rcParams["font.family"] = "Arial"
     plt.rcParams["font.size"] = 36
-    # -------------------------------------------------------------------------
-    C = np.loadtxt(FILE_DUMPED)
-    if HIGH_RESOLUTION:
-        C_normalized = Calc_C_normalized_high_resolution(C)
-    else:
-        C_normalized = Calc_C_normalized(C)
-    P_normalized = Calc_P(C_normalized, RES)
-    # -------------------------------------------------------------------------
-    np.savetxt(FILE_OUT_C_NORMALIZED, C_normalized, fmt="%e")
-    np.savetxt(FILE_OUT_P_NORMALIZED, P_normalized, fmt="%d\t%e")
-    # -------------------------------------------------------------------------
-    plt.figure(figsize=(10, 10))
-    plt.imshow(C_normalized, cmap="magma_r", clim=(0, PLT_MAX_C))
-    plt.colorbar(ticks=[0, PLT_MAX_C], shrink=0.5, orientation="vertical",
-                 label="Normalized contact probability")
-    plt.axis("off")
-    plt.tight_layout()
-    plt.savefig(FILE_FIG_C_NORMALIZED)
-    plt.close()
-    # -------------------------------------------------------------------------
-    plt.figure(figsize=(10, 10))
-    plt.gca().spines["right"].set_visible(False)
-    plt.gca().spines["top"].set_visible(False)
-    plt.gca().yaxis.set_ticks_position("left")
-    plt.gca().xaxis.set_ticks_position("bottom")
-    plt.xscale("log")
-    plt.yscale("log")
-    plt.xlabel("Genomic distance [bp]", fontweight="bold")
-    plt.ylabel("Normalized contact probability", fontweight="bold")
-    plt.plot(P_normalized[1:, 0], P_normalized[1:, 1], linewidth=4)
-    plt.tight_layout()
-    plt.savefig(FILE_FIG_P_NORMALIZED)
-    plt.close()
-# -----------------------------------------------------------------------------
-
-
-@cli.command()
-@click.option("--name", "NAME", required=True,
-              help="Target directory name")
-@click.option("--init-k-backbone", "INIT_K_BACKBONE", type=float, default=0.5,
-              help="Initial parameter of K_i,i+1  [default=0.5]")
-@click.option("--learning-rate", "ETA", type=float, default=1e-4,
-              help="Learning rate  [default=1e-4]")
-@click.option("--stop-condition-parameter", "ALPHA", type=float, default=1e-4,
-              help="Parameter for the stop condition  [default=1e-4]")
-def optimization(NAME, INIT_K_BACKBONE, ETA, ALPHA):
-    STOP_DELTA = ETA * ALPHA
-    # -------------------------------------------------------------------------
-    FILE_READ = NAME + "/C_normalized.txt"
-    DIR_OPT = NAME + "/data_optimization"
-    os.makedirs(DIR_OPT, exist_ok=True)
-    FILE_LOG = DIR_OPT + "/optimization.log"
-    # -------------------------------------------------------------------------
-    C_normalized, N = Read_Normalized_C(FILE_READ)
-    K = Set_Init_K(N, INIT_K_BACKBONE)
-    tmp_C = Convert_K_into_C(K, N)
-    Diff, Cost = Calc_Diff_Cost(tmp_C, C_normalized, N)
-    print("Initial Cost = %f" % Cost)
-    step = 0
-    fp = open(FILE_LOG, "w")
-    # -------------------------------------------------------------------------
-    while True:
-        step += 1
-        tmp_Cost = Cost
-
-        K -= ETA * Diff
-        C = Convert_K_into_C(K, N)
-        Diff, Cost = Calc_Diff_Cost(C, C_normalized, N)
-
-        print("%d\t%e" % (step, Cost), file=fp)
-        delta = tmp_Cost - Cost
-        if 0 < delta < STOP_DELTA:
-            FILE_OUT = DIR_OPT + "/K_optimized.txt"
-            np.savetxt(FILE_OUT, K, fmt="%e")
-            break
-    # -------------------------------------------------------------------------
-    fp.close()
-    # -------------------------------------------------------------------------
-    # Check whether the optimizaed K is physically acceptable or unrealistic
-    L = Transform_K_into_L(K)
-    lam, Q = np.linalg.eigh(L)
-    flag = False
-    for n in range(N - 1):
-        if K[n, n + 1] < 0:
-            flag = True
-
-    if lam[1] < 0:
-        flag = True
-
-    if flag:
-        print(
-            "[Caution] Optimization failed! The optimized K is physically unrealistic.")
-        print("Please carry out the optimization with different initial parameters.")
-    else:
-        print("Optimization succeeded! The optimized K is physically acceptable.")
-# -----------------------------------------------------------------------------
-
-
-@cli.command()
-@click.option("--name", "NAME", required=True,
-              help="Target directory name")
-@click.option("--res", "RES", type=int, required=True,
-              help="Resolution of the bin size")
-@click.option("--plt-max-c", "PLT_MAX_C", type=float, required=True,
-              help="Maximum value of contact map")
-@click.option("--plt-max-k-backbone", "PLT_MAX_K_BACKBONE", type=float, required=True,
-              help="Maximum value of K_i,i+1 profile")
-@click.option("--plt-max-k", "PLT_MAX_K", type=float, required=True,
-              help="Maximum and minimum values of optimized K map")
-@click.option("--plt-k-dis-bins", "PLT_K_DIS_BINS", type=int, required=True,
-              help="The number of bins of distribution of optimized K values")
-@click.option("--plt-max-k-dis", "PLT_MAX_K_DIS", type=float, required=True,
-              help="Maximum value of the K distributioin")
-def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K_BACKBONE, PLT_MAX_K, PLT_K_DIS_BINS, PLT_MAX_K_DIS):
-    # READ & OUTPUT FILES
-    DIR_OPT = NAME + "/data_optimization"
-    FILE_READ_C = NAME + "/C_normalized.txt"
-    FILE_READ_K = DIR_OPT + "/K_optimized.txt"
-    FILE_READ_Cost = DIR_OPT + "/optimization.log"
-    FILE_OUT_C_OPT = DIR_OPT + "/C_optimized.txt"
-    FILE_OUT_K_BACKBONE = DIR_OPT + "/K_backbone.txt"
     FILE_FIG_CORRELATION = DIR_OPT + "/Correlation.png"
     FILE_FIG_DC_CORRELATION = DIR_OPT + "/Correlation_distance_corrected.png"
-    FILE_FIG_K_BACKBONE = DIR_OPT + "/K_backbone.svg"
-    FILE_FIG_C = DIR_OPT + "/C.svg"
-    FILE_FIG_K = DIR_OPT + "/K.svg"
-    FILE_FIG_P = DIR_OPT + "/P.svg"
-    FILE_FIG_K_DIS = DIR_OPT + "/K_distribution.svg"
-    FILE_FIG_Cost = DIR_OPT + "/Cost.svg"
-    # -------------------------------------------------------------------------
-    plt.rcParams["font.family"] = "Arial"
-    plt.rcParams["font.size"] = 36
-    # -------------------------------------------------------------------------
-    C_normalized, N = Read_Normalized_C(FILE_READ_C)
-    K = np.loadtxt(FILE_READ_K)
-    # -------------------------------------------------------------------------
-    # CALC cost and correlation
-    C_optimized = Convert_K_into_C(K, N)
-    np.savetxt(FILE_OUT_C_OPT, C_optimized, fmt="%e")
-    Diff, Cost = Calc_Diff_Cost(C_optimized, C_normalized, N)
-    r, Optimized, Normalized = Calc_Correlation(C_optimized, C_normalized, N)
-    dcr, Optimized_dcr, Normalized_dcr = Calc_Distance_Corrected_Correlation(
-        C_optimized, C_normalized, N)
-    # -------------------------------------------------------------------------
-    P_normalized = Calc_P(C_normalized, RES)
-    P_optimized = Calc_P(C_optimized, RES)
-    # -------------------------------------------------------------------------
-    C = np.zeros((N, N))
-    for i in range(N):
-        for j in range(N):
-            if i > j:
-                C[i, j] = C_optimized[i, j]
-            else:
-                C[i, j] = C_normalized[i, j]
-    # -------------------------------------------------------------------------
-    list_K_wo_backbone = []
-    for i in range(0, N - 2):
-        for j in range(i + 2, N):
-            list_K_wo_backbone.append(K[i, j])
-    K_wo_backbone = np.array(list_K_wo_backbone)
-    # -------------------------------------------------------------------------
-    K_backbone = np.zeros((N - 1, 2))
-    for i in range(N - 1):
-        K_backbone[i, 0] = i
-        K_backbone[i, 1] = K[i, i + 1]
-    np.savetxt(FILE_OUT_K_BACKBONE, K_backbone, fmt="%d\t%f")
     # -------------------------------------------------------------------------
     plt.figure(figsize=(8, 8))
     plt.axes().set_aspect("equal")
@@ -465,24 +355,225 @@ def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K_BACKBONE, PLT_MAX_K, PLT_K
     plt.tight_layout()
     plt.savefig(FILE_FIG_DC_CORRELATION)
     plt.close()
+
+    return r, dcr
+# -----------------------------------------------------------------------------
+
+@click.group()
+def cli():
+    pass
+# -----------------------------------------------------------------------------
+
+@cli.command()
+@click.option("--input", "FILE_INPUT", required=True,
+              help="Input Hi-C file (.hic format)")
+@click.option("--res", "RES", type=int, required=True,
+              help="Resolution of the bin size")
+@click.option("--plt-max-c", "PLT_MAX_C", type=float, required=True,
+              help="Maximum value of contact map")
+@click.option("--for-high-resolution", "HIGH_RESOLUTION", type=int, default=0,
+              help="Normalization of contact map for high-resolution case (ex. 1-kb, 500-bp, 200-bp)  [default=0]")
+@click.option("--chr", "CHR", type=str, required=True,
+              help="Target chromosome")
+@click.option("--grs", "START", type=int, default=None,
+              help="Start position of the target genomic region")
+@click.option("--gre", "END", type=int, default=None,
+              help="End position of the target genomic region")
+@click.option("--norm", "NORM", type=str, default=None,
+              help="Type of normalization to apply")
+@click.option("--tolerance", "TOLERANCE", type=float, required=True,
+              help="Threshold used to remove segments containing NaN values")
+def preprocessing(FILE_INPUT, RES, PLT_MAX_C, HIGH_RESOLUTION, CHR, START, END, NORM, TOLERANCE):
+
+    C_input, N_input, DIR, START, END = make_input_contact_matrix(FILE_INPUT, RES, CHR, START, END, NORM)
+
+    C_for_phic, N_for_phic, nan_indices = remove_invalid_segments(C_input, N_input, TOLERANCE)
+
+    write_meta_data(DIR, FILE_INPUT, NORM, CHR, START, END, RES, N_input, N_for_phic, nan_indices, TOLERANCE)
     # -------------------------------------------------------------------------
-    plt.figure(figsize=(20, 6))
-    plt.xlabel(r"index $i$ ({0:d}-bp bins)".format(RES), fontweight="bold")
-    plt.ylabel(r"Nomrlaized $K_{i, i+1}$", fontweight="bold")
-    plt.ylim(0, PLT_MAX_K_BACKBONE)
-    plt.bar(K_backbone[:, 0], K_backbone[:, 1],
-            width=1.0,
-            color="#FF0000",
-            linewidth=0)
+    FILE_OUT_C_NORMALIZED = DIR + "/C_normalized.txt"
+    FILE_OUT_P_NORMALIZED = DIR + "/P_normalized.txt"
+    FILE_FIG_C_NORMALIZED = DIR + "/C_normalized.svg"
+    FILE_FIG_P_NORMALIZED = DIR + "/P_normalized.svg"
+    plt.rcParams["font.family"] = "Arial"
+    plt.rcParams["font.size"] = 36
+    cmap_for_C = plt.get_cmap("magma_r")
+    cmap_for_C.set_bad(color=(0.8, 0.8, 0.8))
+    # -------------------------------------------------------------------------
+    if HIGH_RESOLUTION:
+        C_normalized = calc_C_normalized_high_resolution(C_for_phic)
+    else:
+        C_normalized = calc_C_normalized(C_for_phic)
+    np.savetxt(FILE_OUT_C_NORMALIZED, C_normalized, fmt="%e")
+    # -------------------------------------------------------------------------
+    for idx in nan_indices:
+        N = C_normalized.shape[0]
+        C_normalized = np.insert(np.insert(C_normalized, idx, np.full(N, np.nan), axis=0), idx, np.full(N+1, np.nan), axis=1)
+    P_normalized = calc_Ps(C_normalized, RES)
+    np.savetxt(FILE_OUT_P_NORMALIZED, P_normalized, fmt="%d\t%e")
+    # -------------------------------------------------------------------------
+    plt.figure(figsize=(10, 10))
+    plt.imshow(C_normalized,
+               cmap=cmap_for_C,
+               interpolation="none", vmin=0, vmax=PLT_MAX_C)
+    plt.colorbar(ticks=[0, PLT_MAX_C], shrink=0.5, orientation="vertical",
+                 label="Normalized contact probability")
+    plt.axis("off")
     plt.tight_layout()
-    plt.savefig(FILE_FIG_K_BACKBONE)
+    plt.savefig(FILE_FIG_C_NORMALIZED)
     plt.close()
+    # -------------------------------------------------------------------------
+    plt.figure(figsize=(10, 10))
+    plt.gca().spines["right"].set_visible(False)
+    plt.gca().spines["top"].set_visible(False)
+    plt.gca().yaxis.set_ticks_position("left")
+    plt.gca().xaxis.set_ticks_position("bottom")
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.xlabel("Genomic distance [bp]", fontweight="bold")
+    plt.ylabel("Normalized contact probability", fontweight="bold")
+    plt.plot(P_normalized[1:, 0], P_normalized[1:, 1], linewidth=4)
+    plt.tight_layout()
+    plt.savefig(FILE_FIG_P_NORMALIZED)
+    plt.close()
+# -----------------------------------------------------------------------------
+
+@cli.command()
+@click.option("--name", "NAME", required=True,
+              help="Target directory name")
+@click.option("--init-k-backbone", "INIT_K_BACKBONE", type=float, default=0.5,
+              help="Initial parameter of K_i,i+1  [default=0.5]")
+@click.option("--learning-rate", "ETA", type=float, default=1e-4,
+              help="Learning rate  [default=1e-4]")
+@click.option("--stop-condition-parameter", "ALPHA", type=float, default=1e-4,
+              help="Parameter for the stop condition  [default=1e-4]")
+def optimization(NAME, INIT_K_BACKBONE, ETA, ALPHA):
+    write_optimizatioin_meta_data(NAME, INIT_K_BACKBONE, ETA, ALPHA)
+    STOP_DELTA = ETA * ALPHA
+    # -------------------------------------------------------------------------
+    FILE_READ = NAME + "/C_normalized.txt"
+    DIR_OPT = NAME + "/data_optimization"
+    os.makedirs(DIR_OPT, exist_ok=True)
+    FILE_LOG = DIR_OPT + "/optimization.log"
+    # -------------------------------------------------------------------------
+    C_normalized, N = read_normalized_C(FILE_READ)
+    K = set_init_K(N, INIT_K_BACKBONE)
+    tmp_C, error_flag = convert_K_into_C(K, N)
+    Diff, Cost = calc_diff_Cost(tmp_C, C_normalized, N)
+    print("Initial Cost = %f" % Cost)
+    step = 0
+    fp = open(FILE_LOG, "w")
+    print("%d\t%e" % (step, Cost), file=fp)
+    # -------------------------------------------------------------------------
+    while True:
+        step += 1
+        tmp_K = K.copy()
+        tmp_Cost = Cost
+
+        K -= ETA * Diff
+        C, error_flag = convert_K_into_C(K, N)
+
+        if error_flag:
+            print(f"Stopping optimization at step {step} due to negative eigenvalue")
+            FILE_OUT = DIR_OPT + "/K_optimized.txt"
+            np.savetxt(FILE_OUT, tmp_K, fmt="%e")
+            break
+
+        Diff, Cost = calc_diff_Cost(C, C_normalized, N)
+        print("%d\t%e" % (step, Cost), file=fp)
+        delta = tmp_Cost - Cost
+        if 0 < delta < STOP_DELTA:
+            FILE_OUT = DIR_OPT + "/K_optimized.txt"
+            np.savetxt(FILE_OUT, K, fmt="%e")
+            break
+    # -------------------------------------------------------------------------
+    fp.close()
+    # -------------------------------------------------------------------------
+    # Check whether the optimizaed K is physically acceptable or unrealistic
+    if not error_flag:
+        L = transform_K_into_L(K)
+        lam, Q = np.linalg.eigh(L)
+
+        # The following condition, which was required for version <= 2.0.13, has been removed.
+        # The positive semidefiniteness of L is a critical condition for the system's stability.
+        #flag = False
+        #for n in range(N - 1):
+        #    if K[n, n + 1] < 0:
+        #        flag = True
+        #if lam[1] < 0:
+        #    flag = True
+        
+        if lam[0] < -1e-10:
+            print("[Caution] Optimization failed! The optimized K is physically unrealistic.")
+            print("Please carry out the optimization with different initial parameters.")
+        else:
+            print("Optimization succeeded! The optimized K is physically acceptable.")
+# -----------------------------------------------------------------------------
+
+@cli.command()
+@click.option("--name", "NAME", required=True,
+              help="Target directory name")
+@click.option("--res", "RES", type=int, required=True,
+              help="Resolution of the bin size")
+@click.option("--plt-max-c", "PLT_MAX_C", type=float, required=True,
+              help="Maximum value of contact map")
+@click.option("--plt-max-k", "PLT_MAX_K", type=float, required=True,
+              help="Maximum and minimum values of optimized K map")
+def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K):
+    # READ & OUTPUT FILES
+    DIR_OPT = NAME + "/data_optimization"
+    FILE_READ_C = NAME + "/C_normalized.txt"
+    FILE_READ_K = DIR_OPT + "/K_optimized.txt"
+    FILE_READ_Cost = DIR_OPT + "/optimization.log"
+    FILE_OUT_C_OPT = DIR_OPT + "/C_optimized.txt"
+    FILE_READ_META = NAME + "/_meta_data/_removed_segments.txt"
+    FILE_FIG_C = DIR_OPT + "/C.svg"
+    FILE_FIG_K = DIR_OPT + "/K.svg"
+    FILE_FIG_P = DIR_OPT + "/P.svg"
+    FILE_FIG_Cost = DIR_OPT + "/Cost.svg"
+    # The following files, which was output for version <= 2.0.13, has been removed.
+    #FILE_OUT_K_BACKBONE = DIR_OPT + "/K_backbone.txt"
+    #FILE_FIG_K_BACKBONE = DIR_OPT + "/K_backbone.svg"
+    #FILE_FIG_K_DIS = DIR_OPT + "/K_distribution.svg"
+    # -------------------------------------------------------------------------
+    plt.rcParams["font.family"] = "Arial"
+    plt.rcParams["font.size"] = 36
+    cmap_for_C = plt.get_cmap("magma_r")
+    cmap_for_C.set_bad(color=(0.8, 0.8, 0.8))
+    cmap_for_K = plt.get_cmap("bwr")
+    cmap_for_K.set_bad(color=(0.8, 0.8, 0.8))
+    # -------------------------------------------------------------------------
+    C_normalized, N = read_normalized_C(FILE_READ_C)
+    K = np.loadtxt(FILE_READ_K)
+    C_optimized, error_flag = convert_K_into_C(K, N)
+    np.savetxt(FILE_OUT_C_OPT, C_optimized, fmt="%e")
+    # -------------------------------------------------------------------------
+    df_meta = pd.read_csv(FILE_READ_META, usecols=[0])
+    if df_meta.shape[0] > 0:
+        nan_indices = df_meta.iloc[:, 0].tolist()
+        for idx in nan_indices:
+            N = C_normalized.shape[0]
+            C_normalized = np.insert(np.insert(C_normalized, idx, np.full(N, np.nan), axis=0), idx, np.full(N+1, np.nan), axis=1)
+            C_optimized = np.insert(np.insert(C_optimized, idx, np.full(N, np.nan), axis=0), idx, np.full(N+1, np.nan), axis=1)
+            K = np.insert(np.insert(K, idx, np.full(N, np.nan), axis=0), idx, np.full(N+1, np.nan), axis=1)
+
+    N = C_normalized.shape[0]
+    C = np.zeros((N, N))
+    C[np.triu_indices(N, k=0)] = C_normalized[np.triu_indices(N, k=0)]
+    C[np.tril_indices(N, k=-1)] = C_optimized[np.tril_indices(N, k=-1)]
+
+    P_normalized = calc_Ps(C_normalized, RES)
+    P_optimized = calc_Ps(C_optimized, RES)
+    # -------------------------------------------------------------------------
+    r, dcr = calc_plot_correlations(C_optimized, C_normalized, N, P_optimized, P_normalized, DIR_OPT)
     # -------------------------------------------------------------------------
     plt.figure(figsize=(10, 10))
     plt.text(N - 1, 0, "Hi-C", fontweight="bold", ha="right", va="top")
     plt.text(0, N - 1, "PHi-C\n" + r"($r$={0:.3f}, $r'$={1:.3f})".format(r, dcr),
              fontweight="bold", ha="left", va="bottom")
-    plt.imshow(C, cmap="magma_r", clim=(0, PLT_MAX_C))
+    plt.imshow(C, 
+               cmap=cmap_for_C,
+               interpolation="none", vmin=0, vmax=PLT_MAX_C)
     plt.colorbar(ticks=[0, PLT_MAX_C], shrink=0.5, orientation="vertical",
                  label="Normalized contact probability")
     plt.axis("off")
@@ -490,7 +581,9 @@ def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K_BACKBONE, PLT_MAX_K, PLT_K
     plt.close()
     # -------------------------------------------------------------------------
     plt.figure(figsize=(10, 10))
-    plt.imshow(K, cmap="bwr", clim=(-PLT_MAX_K, PLT_MAX_K))
+    plt.imshow(K,
+               cmap=cmap_for_K,
+               interpolation="none", vmin=-PLT_MAX_K, vmax=PLT_MAX_K)
     plt.colorbar(ticks=[-PLT_MAX_K, 0, PLT_MAX_K], shrink=0.5, orientation="vertical",
                  label=r"Nomrlaized $K_{ij}$")
     plt.axis("off")
@@ -515,18 +608,6 @@ def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K_BACKBONE, PLT_MAX_K, PLT_K
     plt.savefig(FILE_FIG_P)
     plt.close()
     # -------------------------------------------------------------------------
-    plt.figure(figsize=(10, 10))
-    plt.xlabel(r"Nomrlaized $K_{ij}$", fontweight="bold")
-    plt.ylabel("Probability density", fontweight="bold")
-    plt.hist(K_wo_backbone, bins=PLT_K_DIS_BINS,
-             range=(-PLT_MAX_K, PLT_MAX_K), density=True)
-    plt.xlim(-PLT_MAX_K, PLT_MAX_K)
-    plt.ylim(0, PLT_MAX_K_DIS)
-    plt.xticks([-PLT_MAX_K, -PLT_MAX_K / 2, 0, PLT_MAX_K / 2, PLT_MAX_K])
-    plt.tight_layout()
-    plt.savefig(FILE_FIG_K_DIS)
-    plt.close()
-    # -------------------------------------------------------------------------
     data = np.loadtxt(FILE_READ_Cost)
     plt.figure(figsize=(10, 5))
     plt.gca().spines["right"].set_visible(False)
@@ -542,7 +623,6 @@ def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K_BACKBONE, PLT_MAX_K, PLT_K
     plt.savefig(FILE_FIG_Cost)
     plt.close()
 # -----------------------------------------------------------------------------
-
 
 @cli.command()
 @click.option("--name", "NAME", required=True,
@@ -566,13 +646,13 @@ def dynamics(NAME, EPS, INTERVAL, FRAME, SAMPLE, SEED):
     DIR_4D = NAME + "/data_dynamics"
     os.makedirs(DIR_4D, exist_ok=True)
     # -------------------------------------------------------------------------
-    K, N = Read_K(FILE_READ_K)
-    Write_Psfdata(DIR_4D, NAME, N)
-    L = Transform_K_into_L(K)
+    K, N = read_K(FILE_READ_K)
+    write_psfdata(DIR_4D, NAME, N)
+    L = transform_K_into_L(K)
     lam, Q = np.linalg.eigh(L)
     for sample in range(SAMPLE):
-        Xx, Xy, Xz = Equilibrium_Conformation_of_Normal_Coordinates(lam, N)
-        Rx, Ry, Rz = Convert_X_to_R(Xx, Xy, Xz, Q)
+        Xx, Xy, Xz = equilibrium_conformation_of_normal_coordinates(lam, N)
+        Rx, Ry, Rz = convert_X_to_R(Xx, Xy, Xz, Q)
         # ---------------------------------------------------------------------
         FILE_OUT = DIR_4D + "/sample{0:d}.xyz".format(sample)
         fp = open(FILE_OUT, "w")
@@ -584,11 +664,10 @@ def dynamics(NAME, EPS, INTERVAL, FRAME, SAMPLE, SEED):
                 print("CA\t%f\t%f\t%f" % (Rx[n], Ry[n], Rz[n]), file=fp)
             # -----------------------------------------------------------------
             for step in range(INTERVAL):
-                Rx, Ry, Rz = Integrate_Polymer_Network(
+                Rx, Ry, Rz = integrate_polymer_network(
                     Rx, Ry, Rz, L, N, NOISE, F_Coefficient)
         fp.close()
 # -----------------------------------------------------------------------------
-
 
 @cli.command()
 @click.option("--name", "NAME", required=True,
@@ -605,15 +684,15 @@ def sampling(NAME, SAMPLE, SEED):
     os.makedirs(DIR_3D, exist_ok=True)
     FILE_OUT = DIR_3D + "/conformations.xyz"
     # -------------------------------------------------------------------------
-    K, N = Read_K(FILE_READ_K)
-    Write_Psfdata(DIR_3D, NAME, N)
-    L = Transform_K_into_L(K)
+    K, N = read_K(FILE_READ_K)
+    write_psfdata(DIR_3D, NAME, N)
+    L = transform_K_into_L(K)
     lam, Q = np.linalg.eigh(L)
     # -------------------------------------------------------------------------
     fp = open(FILE_OUT, "w")
     for sample in range(SAMPLE):
-        Xx, Xy, Xz = Equilibrium_Conformation_of_Normal_Coordinates(lam, N)
-        Rx, Ry, Rz = Convert_X_to_R(Xx, Xy, Xz, Q)
+        Xx, Xy, Xz = equilibrium_conformation_of_normal_coordinates(lam, N)
+        Rx, Ry, Rz = convert_X_to_R(Xx, Xy, Xz, Q)
         # ---------------------------------------------------------------------
         print("%d" % N, file=fp)
         print("sample = %d" % sample, file=fp)
@@ -622,7 +701,6 @@ def sampling(NAME, SAMPLE, SEED):
         # ---------------------------------------------------------------------
     fp.close()
 # -----------------------------------------------------------------------------
-
 
 @cli.command()
 @click.option("--name", "NAME", required=True,
@@ -639,8 +717,8 @@ def rheology(NAME, UPPER, LOWER):
     DIR = NAME + "/data_rheology"
     os.makedirs(DIR, exist_ok=True)
     # -------------------------------------------------------------------------
-    K, N = Read_K(FILE_READ_K)
-    L = Transform_K_into_L(K)
+    K, N = read_K(FILE_READ_K)
+    L = transform_K_into_L(K)
     lam, Q = np.linalg.eigh(L)
     lam[0] = 0
     omega_1 = 6 * np.pi * lam[1]
@@ -672,7 +750,6 @@ def rheology(NAME, UPPER, LOWER):
         np.savetxt(FILE_OUT, data, fmt="%e")
 # -----------------------------------------------------------------------------
 
-
 @cli.command()
 @click.option("--name", "NAME", required=True,
               help="Target directory name")
@@ -693,6 +770,7 @@ def rheology(NAME, UPPER, LOWER):
 def plot_compliance(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_LOG, ASPECT):
     DIR_OPT = NAME + "/data_optimization"
     FILE_READ_K = DIR_OPT + "/K_optimized.txt"
+    FILE_READ_META = NAME + "/_meta_data/_removed_segments.txt"
     DIR = NAME + "/data_rheology"
     FILE_OUT_SPECTRUM_STORAGE = DIR + "/data_J_storage_spectrum.txt"
     FILE_OUT_SPECTRUM_LOSS = DIR + "/data_J_loss_spectrum.txt"
@@ -704,7 +782,7 @@ def plot_compliance(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_M
     FILE_FIG_SPECTRUM_LOSS = DIR_FIG + "/J_loss_spectrum.svg"
     FILE_FIG_SPECTRUM_ABS = DIR_FIG + "/J_abs_spectrum.svg"
     # -------------------------------------------------------------------------
-    K, N = Read_K(FILE_READ_K)
+    K, N = read_K(FILE_READ_K)
     # -------------------------------------------------------------------------
     plt.rcParams["font.family"] = "Arial"
     plt.rcParams["font.size"] = 36
@@ -730,6 +808,8 @@ def plot_compliance(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_M
     # -------------------------------------------------------------------------
     plt.rcParams["font.family"] = "Arial"
     plt.rcParams["font.size"] = 24
+    cmap_for_J = plt.get_cmap("jet")
+    cmap_for_J.set_bad(color=(0.8, 0.8, 0.8))
     # -------------------------------------------------------------------------
     M = 100 * (UPPER - LOWER)
     START = 100 * (PLT_LOWER - LOWER)
@@ -747,13 +827,21 @@ def plot_compliance(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_M
         J_loss[:, n] = data[:, 2]
         J_abs[:, n] = data[:, 3]
     # -------------------------------------------------------------------------
+    df_meta = pd.read_csv(FILE_READ_META, usecols=[0])
+    if df_meta.shape[0] > 0:
+        nan_indices = df_meta.iloc[:, 0].tolist()
+        for idx in nan_indices:
+            J_storage = np.insert(J_storage, idx, np.full(M+1, np.nan), axis=1)
+            J_loss = np.insert(J_loss, idx, np.full(M+1, np.nan), axis=1)
+            J_abs = np.insert(J_abs, idx, np.full(M+1, np.nan), axis=1)
+    # -------------------------------------------------------------------------
     plt.figure(figsize=(8, 4))
     plt.ylabel(r"$\mathrm{\mathbf{log_{10} \bar{\omega}}}$")
     plt.yticks(np.arange(0, END - START, 100), YTICKS_LABELS)
 
     plt.imshow(np.log10(J_storage[START:END, :]),
-               cmap="jet",
-               clim=(PLT_MIN_LOG, PLT_MAX_LOG),
+               cmap=cmap_for_J,
+               interpolation="none", vmin=PLT_MIN_LOG, vmax=PLT_MAX_LOG,
                aspect=ASPECT,
                origin="lower")
     plt.colorbar(shrink=0.8,
@@ -774,8 +862,8 @@ def plot_compliance(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_M
     plt.yticks(np.arange(0, END - START, 100), YTICKS_LABELS)
 
     plt.imshow(np.log10(J_loss[START:END, :]),
-               cmap="jet",
-               clim=(PLT_MIN_LOG, PLT_MAX_LOG),
+               cmap=cmap_for_J,
+               interpolation="none", vmin=PLT_MIN_LOG, vmax=PLT_MAX_LOG,
                aspect=ASPECT,
                origin="lower")
     plt.colorbar(shrink=0.8,
@@ -796,8 +884,8 @@ def plot_compliance(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_M
     plt.yticks(np.arange(0, END - START, 100), YTICKS_LABELS)
 
     plt.imshow(np.log10(J_abs[START:END, :]),
-               cmap="jet",
-               clim=(PLT_MIN_LOG, PLT_MAX_LOG),
+               cmap=cmap_for_J,
+               interpolation="none", vmin=PLT_MIN_LOG, vmax=PLT_MAX_LOG,
                aspect=ASPECT,
                origin="lower")
     plt.colorbar(shrink=0.8,
@@ -817,7 +905,6 @@ def plot_compliance(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_M
     np.savetxt(FILE_OUT_SPECTRUM_LOSS, J_loss[START:END, :], fmt="%e")
     np.savetxt(FILE_OUT_SPECTRUM_ABS, J_abs[START:END, :], fmt="%e")
 # -----------------------------------------------------------------------------
-
 
 @cli.command()
 @click.option("--name", "NAME", required=True,
@@ -839,6 +926,7 @@ def plot_compliance(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_M
 def plot_modulus(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_LOG, ASPECT):
     DIR_OPT = NAME + "/data_optimization"
     FILE_READ_K = DIR_OPT + "/K_optimized.txt"
+    FILE_READ_META = NAME + "/_meta_data/_removed_segments.txt"
     DIR = NAME + "/data_rheology"
     FILE_OUT_SPECTRUM_STORAGE = DIR + "/data_G_storage_spectrum.txt"
     FILE_OUT_SPECTRUM_LOSS = DIR + "/data_G_loss_spectrum.txt"
@@ -850,7 +938,7 @@ def plot_modulus(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_
     FILE_FIG_SPECTRUM_LOSS = DIR_FIG + "/G_loss_spectrum.svg"
     FILE_FIG_SPECTRUM_ABS = DIR_FIG + "/G_abs_spectrum.svg"
     # -------------------------------------------------------------------------
-    K, N = Read_K(FILE_READ_K)
+    K, N = read_K(FILE_READ_K)
     # -------------------------------------------------------------------------
     plt.rcParams["font.family"] = "Arial"
     plt.rcParams["font.size"] = 36
@@ -876,6 +964,8 @@ def plot_modulus(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_
     # -------------------------------------------------------------------------
     plt.rcParams["font.family"] = "Arial"
     plt.rcParams["font.size"] = 24
+    cmap_for_G = plt.get_cmap("jet")
+    cmap_for_G.set_bad(color=(0.8, 0.8, 0.8))
     # -------------------------------------------------------------------------
     M = 100 * (UPPER - LOWER)
     START = 100 * (PLT_LOWER - LOWER)
@@ -893,13 +983,21 @@ def plot_modulus(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_
         G_loss[:, n] = data[:, 5]
         G_abs[:, n] = data[:, 6]
     # -------------------------------------------------------------------------
+    df_meta = pd.read_csv(FILE_READ_META, usecols=[0])
+    if df_meta.shape[0] > 0:
+        nan_indices = df_meta.iloc[:, 0].tolist()
+        for idx in nan_indices:
+            G_storage = np.insert(G_storage, idx, np.full(M+1, np.nan), axis=1)
+            G_loss = np.insert(G_loss, idx, np.full(M+1, np.nan), axis=1)
+            G_abs = np.insert(G_abs, idx, np.full(M+1, np.nan), axis=1)
+    # -------------------------------------------------------------------------
     plt.figure(figsize=(8, 4))
     plt.ylabel(r"$\mathrm{\mathbf{log_{10} \bar{\omega}}}$")
     plt.yticks(np.arange(0, END - START, 100), YTICKS_LABELS)
 
     plt.imshow(np.log10(G_storage[START:END, :]),
-               cmap="jet",
-               clim=(PLT_MIN_LOG, PLT_MAX_LOG),
+               cmap=cmap_for_G,
+               interpolation="none", vmin=PLT_MIN_LOG, vmax=PLT_MAX_LOG,
                aspect=ASPECT,
                origin="lower")
     plt.colorbar(shrink=0.8,
@@ -920,8 +1018,8 @@ def plot_modulus(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_
     plt.yticks(np.arange(0, END - START, 100), YTICKS_LABELS)
 
     plt.imshow(np.log10(G_loss[START:END, :]),
-               cmap="jet",
-               clim=(PLT_MIN_LOG, PLT_MAX_LOG),
+               cmap=cmap_for_G,
+               interpolation="none", vmin=PLT_MIN_LOG, vmax=PLT_MAX_LOG,
                aspect=ASPECT,
                origin="lower")
     plt.colorbar(shrink=0.8,
@@ -942,8 +1040,8 @@ def plot_modulus(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_
     plt.yticks(np.arange(0, END - START, 100), YTICKS_LABELS)
 
     plt.imshow(np.log10(G_abs[START:END, :]),
-               cmap="jet",
-               clim=(PLT_MIN_LOG, PLT_MAX_LOG),
+               cmap=cmap_for_G,
+               interpolation="none", vmin=PLT_MIN_LOG, vmax=PLT_MAX_LOG,
                aspect=ASPECT,
                origin="lower")
     plt.colorbar(shrink=0.8,
@@ -964,7 +1062,6 @@ def plot_modulus(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_
     np.savetxt(FILE_OUT_SPECTRUM_ABS, G_abs[START:END, :], fmt="%e")
 # -----------------------------------------------------------------------------
 
-
 @cli.command()
 @click.option("--name", "NAME", required=True,
               help="Target directory name")
@@ -983,16 +1080,19 @@ def plot_modulus(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_
 def plot_tangent(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, ASPECT):
     DIR_OPT = NAME + "/data_optimization"
     FILE_READ_K = DIR_OPT + "/K_optimized.txt"
+    FILE_READ_META = NAME + "/_meta_data/_removed_segments.txt"
     DIR = NAME + "/data_rheology"
     FILE_OUT_SPECTRUM = DIR + "/data_tan_spectrum.txt"
     DIR_FIG = DIR + "/figs"
     os.makedirs(DIR_FIG, exist_ok=True)
     FILE_FIG_SPECTRUM = DIR_FIG + "/tan_spectrum.svg"
     # -------------------------------------------------------------------------
-    K, N = Read_K(FILE_READ_K)
+    K, N = read_K(FILE_READ_K)
     # -------------------------------------------------------------------------
     plt.rcParams["font.family"] = "Arial"
     plt.rcParams["font.size"] = 24
+    cmap_for_tan = plt.get_cmap("coolwarm")
+    cmap_for_tan.set_bad(color=(0.5, 0.5, 0.5))
     # -------------------------------------------------------------------------
     M = 100 * (UPPER - LOWER)
     START = 100 * (PLT_LOWER - LOWER)
@@ -1006,13 +1106,19 @@ def plot_tangent(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, ASPECT):
         data = np.loadtxt(FILE_READ)
         tan[:, n] = data[:, 7]
     # -------------------------------------------------------------------------
+    df_meta = pd.read_csv(FILE_READ_META, usecols=[0])
+    if df_meta.shape[0] > 0:
+        nan_indices = df_meta.iloc[:, 0].tolist()
+        for idx in nan_indices:
+            tan = np.insert(tan, idx, np.full(M+1, np.nan), axis=1)
+    # -------------------------------------------------------------------------
     plt.figure(figsize=(8, 4))
     plt.ylabel(r"$\mathrm{\mathbf{log_{10} \bar{\omega}}}$")
     plt.yticks(np.arange(0, END - START, 100), YTICKS_LABELS)
 
     plt.imshow(np.log10(tan[START:END, :]),
-               cmap="coolwarm",
-               clim=(-PLT_MAX_LOG, PLT_MAX_LOG),
+               cmap=cmap_for_tan,
+               interpolation="none", vmin=-PLT_MAX_LOG, vmax=PLT_MAX_LOG,
                aspect=ASPECT,
                origin="lower")
     plt.colorbar(shrink=0.8,
@@ -1031,7 +1137,6 @@ def plot_tangent(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, ASPECT):
     np.savetxt(FILE_OUT_SPECTRUM, tan[START:END, :], fmt="%e")
 # -----------------------------------------------------------------------------
 
-
 @cli.command()
 @click.option("--name", "NAME", required=True,
               help="Target directory name")
@@ -1047,8 +1152,8 @@ def msd(NAME, UPPER, LOWER):
     DIR = NAME + "/data_MSD"
     os.makedirs(DIR, exist_ok=True)
     # -------------------------------------------------------------------------
-    K, N = Read_K(FILE_READ_K)
-    L = Transform_K_into_L(K)
+    K, N = read_K(FILE_READ_K)
+    L = transform_K_into_L(K)
     lam, Q = np.linalg.eigh(L)
     # -------------------------------------------------------------------------
     for n in range(N):
@@ -1086,6 +1191,7 @@ def msd(NAME, UPPER, LOWER):
 def plot_msd(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_LOG, ASPECT):
     DIR_OPT = NAME + "/data_optimization"
     FILE_READ_K = DIR_OPT + "/K_optimized.txt"
+    FILE_READ_META = NAME + "/_meta_data/_removed_segments.txt"
     DIR = NAME + "/data_MSD"
     FILE_OUT_SPECTRUM_MSD = DIR + "/data_MSD_spectrum.txt"
     DIR_FIG = DIR + "/figs"
@@ -1093,7 +1199,7 @@ def plot_msd(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_LOG,
     FILE_FIG_CURVES = DIR_FIG + "/MSD_curves.png"
     FILE_FIG_SPECTRUM_MSD = DIR_FIG + "/MSD_spectrum.svg"
     # -------------------------------------------------------------------------
-    K, N = Read_K(FILE_READ_K)
+    K, N = read_K(FILE_READ_K)
     # -------------------------------------------------------------------------
     plt.rcParams["font.family"] = "Arial"
     plt.rcParams["font.size"] = 36
@@ -1118,6 +1224,8 @@ def plot_msd(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_LOG,
     # -------------------------------------------------------------------------
     plt.rcParams["font.family"] = "Arial"
     plt.rcParams["font.size"] = 24
+    cmap_for_MSD = plt.get_cmap("jet")
+    cmap_for_MSD.set_bad(color=(0.8, 0.8, 0.8))
     # -------------------------------------------------------------------------
     M = 100 * (UPPER - LOWER)
     START = 100 * (PLT_LOWER - LOWER)
@@ -1131,15 +1239,20 @@ def plot_msd(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_LOG,
         data = np.loadtxt(FILE_READ)
         MSD[:, n] = data[:, 1]
     # -------------------------------------------------------------------------
+    df_meta = pd.read_csv(FILE_READ_META, usecols=[0])
+    if df_meta.shape[0] > 0:
+        nan_indices = df_meta.iloc[:, 0].tolist()
+        for idx in nan_indices:
+            MSD = np.insert(MSD, idx, np.full(M+1, np.nan), axis=1)
+    # -------------------------------------------------------------------------
     plt.figure(figsize=(8, 4))
     plt.ylabel(r"$\mathrm{\mathbf{log_{10} \bar{t}}}$")
     plt.yticks(np.arange(0, END - START, 100), YTICKS_LABELS)
 
     plt.imshow(np.log10(MSD[START:END, :]),
-               cmap="jet",
-               clim=(PLT_MIN_LOG, PLT_MAX_LOG),
+               cmap=cmap_for_MSD,
+               interpolation="none", vmin=PLT_MIN_LOG, vmax=PLT_MAX_LOG,
                aspect=ASPECT)
-    # origin="lower")
     plt.colorbar(shrink=0.8,
                  label=r"$\mathrm{\mathbf{log_{10} \overline{MSD}(\bar{t})}}$",
                  ticks=[0, 1, 2])
@@ -1156,6 +1269,6 @@ def plot_msd(NAME, UPPER, LOWER, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_LOG,
     np.savetxt(FILE_OUT_SPECTRUM_MSD, MSD[START:END, :], fmt="%e")
 # -----------------------------------------------------------------------------
 
-
 if __name__ == '__main__':
     cli()
+

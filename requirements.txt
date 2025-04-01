@@ -3,3 +3,5 @@ matplotlib
 scipy
 numba
 click
+pandas
+hic-straw
