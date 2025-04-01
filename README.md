@@ -4,10 +4,12 @@ The `phic` package includes a suite of command line tools.
 
 <img src="/img/fig0.svg">
 
-### Installation
+### Installation (with Conda environment)
 
-Install `phic` from PyPI using pip:
+You can install `phic` in a clean environment as follows:
 
+    conda create -n phic python=3.12
+    conda activate phic
     pip install phic
 
 ![PyPI Downloads](https://static.pepy.tech/badge/phic)
