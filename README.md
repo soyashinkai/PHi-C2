@@ -73,9 +73,9 @@ The demo uses Hi-C data of mouse embryonic stem cells (chr8: 42,100–44,525 kb,
       |       |--> plot-msd
       |
       |-->  rheology
+              |--> plot-tangent
               |--> plot-compliance
               |--> plot-modulus
-              |--> plot-tangent
 
 #### 1. preprocessing
 
