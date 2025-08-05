@@ -15,7 +15,8 @@ setup(
     url="https://github.com/soyashinkai/PHi-C2",
     keywords=["biophysics", "bioinformatics", "genomics", "Hi-C",
               "polymer modeling", "polymer dynamics", "rheology", ],
-    packages=find_packages(),
+    packages=find_packages(where="src"),
+    package_dir={"": "src"},
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
