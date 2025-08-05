@@ -95,6 +95,10 @@ Use this command to check available chromosomes, resolution levels, and indexing
 
 This is a recommended first step when working with new input files.
 
+Example:
+
+    phic fetch-fileinfo --input FILENAME.hic
+
 #### 1. preprocessing
 
     phic preprocessing [OPTIONS]
