@@ -8,6 +8,8 @@ import scipy.stats
 import click
 import hicstraw # for version >= 2.1.0
 import pandas as pd # for version >= 2.1.0
+import cooler # for version >= 2.1.1
+import h5py # for version >= 2.1.1
 # -----------------------------------------------------------------------------
 
 def calc_C_normalized(C):
@@ -193,9 +195,8 @@ def integrate_polymer_network(x, y, z, L, N, NOISE, F_Coefficient):
     return X, Y, Z
 # -----------------------------------------------------------------------------
 
-def write_psfdata(DIR, NAME, N):
-    FILE_PSF = DIR + "/polymer_N{0:d}.psf".format(N)
-    fp = open(FILE_PSF, "w")
+def write_psfdata(psf_path, NAME, N):
+    fp = open(psf_path, "w")
     print("PSF\n\n       1 !NTITLE\n REMARKS %s\n" % NAME, file=fp)
     print(" %7d !NATOM" % N, file=fp)
     for n in range(N):
@@ -213,9 +214,10 @@ def write_psfdata(DIR, NAME, N):
     fp.close()
 # -----------------------------------------------------------------------------
 
+# Supports both .hic and .mcool files.
 def make_input_contact_matrix(FILE_INPUT, RES, CHR, START, END, NORM):
     NAME, EXT = os.path.splitext(os.path.basename(FILE_INPUT))
-    
+
     if EXT == ".hic": # for version >= 2.1.0
         if not (isinstance(START, int) and isinstance(END, int)): # for the whole single chromosome
             # Set START and END for the target chromosome ID
@@ -230,25 +232,47 @@ def make_input_contact_matrix(FILE_INPUT, RES, CHR, START, END, NORM):
             C_input = np.full((N_input, N_input), np.nan)
             result = hicstraw.straw("observed", NORM, FILE_INPUT, CHR, CHR, "BP", RES)
             for k in range(len(result)):
-                l = int(result[k].binX / RES)
-                m = int(result[k].binY / RES)
+                l = int((result[k].binX - START) / RES)
+                m = int((result[k].binY - START) / RES)
                 C_input[l, m] = C_input[m, l] = result[k].counts
             # Set the name of the working directory
-            DIR = "{0:s}_{1:s}_chr{2:s}_res{3:d}bp".format(NAME, NORM, CHR, RES)
+            DIR = f"{NAME}_{NORM}_chr{CHR}_res{RES}bp"
         else:
             # Set an input raw contact matrix with nan-values
             N_input = int((END - START) / RES)
             C_input = np.full((N_input, N_input), np.nan)
-            ROI = "{0:s}:{1:d}:{2:d}".format(CHR, START, END - RES)
+            #ROI = "{0:s}:{1:d}:{2:d}".format(CHR, START, END - RES)
+            ROI = f"{CHR}:{START}:{END - RES}"
             result = hicstraw.straw("observed", NORM, FILE_INPUT, ROI, ROI, "BP", RES)
             for k in range(len(result)):
                 l = int((result[k].binX - START) / RES)
                 m = int((result[k].binY - START) / RES)
                 C_input[l, m] = C_input[m, l] = result[k].counts
             # Set the name of the working directory
-            DIR = "{0:s}_{1:s}_chr{2:s}_{3:d}-{4:d}_res{5:d}bp".format(NAME, NORM, CHR, START, END, RES)
+            DIR = f"{NAME}_{NORM}_chr{CHR}_{START}-{END}_res{RES}bp"
+    elif EXT == ".mcool": # for mcool files # for version >= 2.1.1
+        if not (isinstance(START, int) and isinstance(END, int)):  # for the whole single chromosome
+            hic = cooler.Cooler(f"{FILE_INPUT}::resolutions/{RES}")
+            START = int(0)
+            for chrom in hic.chromnames:
+                if chrom == CHR:
+                    END = hic.chromsizes[chrom]
+                    break
+            coo = hic.matrix(balance=NORM, sparse=True).fetch(f"{CHR}") # sparse=True. Returns scipy.sparse.coo_matrix.
+            C_input = np.full(coo.shape, np.nan)
+            C_input[coo.row, coo.col] = coo.data
+            # Set the name of the working directory
+            DIR = f"{NAME}_{NORM}_{CHR}_res{RES}bp"
+        else:
+            hic = cooler.Cooler(f"{FILE_INPUT}::resolutions/{RES}")
+            coo = hic.matrix(balance=NORM, sparse=True).fetch(f"{CHR}:{START}-{END}") # sparse=True. Returns scipy.sparse.coo_matrix.
+            C_input = np.full(coo.shape, np.nan)
+            C_input[coo.row, coo.col] = coo.data
+            # Set the name of the working directory
+            DIR = f"{NAME}_{NORM}_{CHR}_{START}-{END}_res{RES}bp"
+        N_input = C_input.shape[0]
     else: # for version <= 2.0.13
-        print("Version 2.1.0 and above no longer support input in formats other than .hic.")
+        print("Version 2.1.0 and above no longer support input in formats other than .hic or .mcool.")
 
     os.makedirs(DIR, exist_ok=True)
     return C_input, N_input, DIR, START, END
@@ -366,7 +390,36 @@ def cli():
 
 @cli.command()
 @click.option("--input", "FILE_INPUT", required=True,
-              help="Input Hi-C file (.hic format)")
+              help="Input Hi-C file (.hic or .mcool format)")
+def fetch_fileinfo(FILE_INPUT):
+    NAME, EXT = os.path.splitext(os.path.basename(FILE_INPUT))
+    if EXT == ".hic":  # for .hic files
+        hic = hicstraw.HiCFile(FILE_INPUT)
+        print("chromosome, length")
+        [print(chrom.name, chrom.length) for chrom in hic.getChromosomes()]
+        print("------------------------")
+        print("(usually) available normalization methods:", ["NONE", "VC", "VC_SQRT", "KR", "SCALE"])
+        print("-------------------------")
+        print("available resolutions:", hic.getResolutions())
+        print("-------------------------")
+    elif EXT == ".mcool":  # for .mcool files
+        with h5py.File(FILE_INPUT, "r") as f:
+            resolutions = list(f["resolutions"].keys())
+        hic = cooler.Cooler(f'{FILE_INPUT}::resolutions/{resolutions[0]}')  # Use a default resolution to access metadata
+        print("chromosome, length")
+        [print(chromname, hic.chromsizes[chromname]) for chromname in hic.chromnames]
+        print("------------------------")
+        print("(usually) available normalization methods:", [None, True, "KR", "VC", "VC_SQRT"])
+        print("-------------------------")
+        print("available resolutions:", resolutions)
+        print("-------------------------")      
+    else:
+        print("Unsupported file format.")
+# -----------------------------------------------------------------------------
+
+@cli.command()
+@click.option("--input", "FILE_INPUT", required=True,
+              help="Input Hi-C file (.hic or .mcool format)")
 @click.option("--res", "RES", type=int, required=True,
               help="Resolution of the bin size")
 @click.option("--plt-max-c", "PLT_MAX_C", type=float, required=True,
@@ -384,11 +437,8 @@ def cli():
 @click.option("--tolerance", "TOLERANCE", type=float, required=True,
               help="Threshold used to remove segments containing NaN values")
 def preprocessing(FILE_INPUT, RES, PLT_MAX_C, HIGH_RESOLUTION, CHR, START, END, NORM, TOLERANCE):
-
     C_input, N_input, DIR, START, END = make_input_contact_matrix(FILE_INPUT, RES, CHR, START, END, NORM)
-
     C_for_phic, N_for_phic, nan_indices = remove_invalid_segments(C_input, N_input, TOLERANCE)
-
     write_meta_data(DIR, FILE_INPUT, NORM, CHR, START, END, RES, N_input, N_for_phic, nan_indices, TOLERANCE)
     # -------------------------------------------------------------------------
     FILE_OUT_C_NORMALIZED = DIR + "/C_normalized.txt"
@@ -647,15 +697,16 @@ def dynamics(NAME, EPS, INTERVAL, FRAME, SAMPLE, SEED):
     os.makedirs(DIR_4D, exist_ok=True)
     # -------------------------------------------------------------------------
     K, N = read_K(FILE_READ_K)
-    write_psfdata(DIR_4D, NAME, N)
+    psf_path = os.path.join(DIR_4D, f"polymer_N{N}.psf")
+    write_psfdata(psf_path, NAME, N)
     L = transform_K_into_L(K)
     lam, Q = np.linalg.eigh(L)
     for sample in range(SAMPLE):
         Xx, Xy, Xz = equilibrium_conformation_of_normal_coordinates(lam, N)
         Rx, Ry, Rz = convert_X_to_R(Xx, Xy, Xz, Q)
         # ---------------------------------------------------------------------
-        FILE_OUT = DIR_4D + "/sample{0:d}.xyz".format(sample)
-        fp = open(FILE_OUT, "w")
+        xyz_path = os.path.join(DIR_4D, f"sample{sample}.xyz")
+        fp = open(xyz_path, "w")
         for frame in range(FRAME + 1):
             # -----------------------------------------------------------------
             print("%d" % N, file=fp)
@@ -664,8 +715,8 @@ def dynamics(NAME, EPS, INTERVAL, FRAME, SAMPLE, SEED):
                 print("CA\t%f\t%f\t%f" % (Rx[n], Ry[n], Rz[n]), file=fp)
             # -----------------------------------------------------------------
             for step in range(INTERVAL):
-                Rx, Ry, Rz = integrate_polymer_network(
-                    Rx, Ry, Rz, L, N, NOISE, F_Coefficient)
+                Rx, Ry, Rz = integrate_polymer_network(Rx, Ry, Rz, L, N,
+                                                       NOISE, F_Coefficient)
         fp.close()
 # -----------------------------------------------------------------------------
 

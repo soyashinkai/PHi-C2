@@ -65,6 +65,8 @@ The demo uses Hi-C data of mouse embryonic stem cells (chr8: 42,100–44,525 kb,
     phic SUBCOMMAND [OPTIONS]
 
     Subcommands:
+    fetch-fileinfo
+      |
     preprocessing
       |
     optimization
@@ -78,6 +80,20 @@ The demo uses Hi-C data of mouse embryonic stem cells (chr8: 42,100–44,525 kb,
               |--> plot-tangent
               |--> plot-compliance
               |--> plot-modulus
+
+#### 0. fetch-fileinfo
+
+    phic fetch-fileinfo [OPTIONS]
+
+    Options:
+      --input               TEXT     Input Hi-C file (.hic or .mcool format)  [required]
+
+The `fetch-fileinfo` subcommand is used to inspect the basic metadata of a Hi-C data file.
+As of version 2.1.1, `phic` supports both `.hic` and `.mcool` formats as input.
+
+Use this command to check available chromosomes, resolution levels, and indexing details in the input file before proceeding with further analysis. This ensures that downstream subcommands reference the correct chromosome names and binning resolutions.
+
+This is a recommended first step when working with new input files.
 
 #### 1. preprocessing
 
@@ -95,7 +111,7 @@ The demo uses Hi-C data of mouse embryonic stem cells (chr8: 42,100–44,525 kb,
       --tolerance           FLOAT    Threshold used to remove segments containing NaN values [required]
       --help                         Show this message and exit.
 
-In version 2.1.0 and later, the input data format has been changed to `.hic`. Additionally, it is now possible to exclude rows and columns containing NaN values from the analysis by specifying their allowed proportion (ranging from 0 to 1) using the `tolerance` parameter.
+In version 2.1.1 and later, the input data format has been changed to `.hic` or `.mcool`. Additionally, it is now possible to exclude rows and columns containing NaN values from the analysis by specifying their allowed proportion (ranging from 0 to 1) using the `tolerance` parameter.
 
 When using the `preprocessing` subcommand, a directory will be automatically created based on the input Hi-C file name, chromosome number, genomic region of interest (optional), resolution, and normalization method. All subsequent analysis results will be stored in this directory. In the following explanations, we refer to this directory as _NAME_.
 
