@@ -9,6 +9,9 @@ END=44525000
 RES=25000
 PLT_MAX_C=0.1
 
+# Fetch the input Hi-C file
+phic fetch-fileinfo --input ${HIC}
+
 # Run the preprocessing
 phic preprocessing --input ${HIC} --res ${RES} --plt-max-c ${PLT_MAX_C} --chr ${CHR} --grs ${START} --gre ${END} --norm KR --tolerance 0.6
 

@@ -20,7 +20,7 @@ Without preparing a Python environment, PHi-C2 (=<2.0.13) rus on [Google Colab](
 
 ### Requirements
 - PHi-C2 is based on `python3`.
-- Python packages `numpy`, `matplotlib`, `scipy`, `numba`, `click`, `pandas`, `hic-straw`.
+- Python packages `numpy`, `matplotlib`, `scipy`, `numba`, `click`, `pandas`, `hic-straw`, `cooler`, `h5py`.
 
 To visualize the simulated polymer dynamics and conformations, [VMD](https://www.ks.uiuc.edu/Research/vmd/) is needed.
 
@@ -100,7 +100,7 @@ This is a recommended first step when working with new input files.
     phic preprocessing [OPTIONS]
 
     Options:
-      --input               TEXT     Input Hi-C file (.hic format)  [required]
+      --input               TEXT     Input Hi-C file (.hic or .mcool format)  [required]
       --res                 INTEGER  Resolution of the bin size  [required]
       --plt-max-c           FLOAT    Maximum value of contact map  [required]
       --for-high-resolution INTEGER  Normalization of contact map for high-resolution case (ex. 1-kb, 500-bp, 200-bp)  [default=0]
