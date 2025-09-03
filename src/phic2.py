@@ -3,7 +3,6 @@ os.environ["MKL_NUM_THREADS"] = "2"
 os.environ["OMP_NUM_THREADS"] = "2"
 import numpy as np
 import matplotlib.pyplot as plt
-import numba
 import scipy.stats
 import click
 import hicstraw # for version >= 2.1.0
@@ -73,35 +72,36 @@ def set_init_K(N, INIT_K_BACKBONE):
     return K
 # -----------------------------------------------------------------------------
 
-@numba.jit(nopython=True)
 def convert_K_into_C(K, N):
-    # K to Laplacian matrix
+    # K to L
     d = np.sum(K, axis=0)
-    D = np.diag(d)
-    L = D - K
-    # Eigenvalues and eigenvectors
+    L = np.diag(d) - K
+
+    # L to M
     lam, Q = np.linalg.eigh(L)
-    inv_lam = 1 / lam   # inverse of the eigenvalues
-    inv_lam[0] = 0
-    inv_Lam = np.diag(inv_lam)
+    inv_lam = np.zeros_like(lam)
+    nonzero = lam > 1e-12
+    inv_lam[nonzero] = 1.0 / lam[nonzero]
+    inv_lam[0] = 0.0
+    M = (Q * inv_lam) @ Q.T
+
+    # M to Σ^2
+    md = np.diag(M)
+    Sigma2 = (md[:, None] + md[None, :] - 2.0 * M) / 3.0
+
+    # Σ^2 to C
+    C = (1.0 + Sigma2)**(-1.5)
+
     # All eigenvalues have to be positive
     error_flag = lam[0] < -1e-10
-    # L to M
-    M = np.dot(Q, np.dot(inv_Lam, Q.T))
-    # M to Σ^2
-    M_diag = np.diag(np.diag(M))
-    A = np.dot(M_diag, np.ones((N, N)))
-    Sigma2 = (A + A.T - 2 * M) / 3
-    # Σ^2 to C
-    C = (1 + Sigma2)**(-1.5)
+
     return C, error_flag
 # -----------------------------------------------------------------------------
 
-@numba.jit(nopython=True)
-def calc_diff_Cost(A, B, N):
-    Diff = A - B
-    Cost = np.sqrt(np.trace(np.dot(Diff.T, Diff))) / N
-    return Diff, Cost
+def calc_diff_cost(A, B, N):
+    diff = A - B
+    cost = np.linalg.norm(diff, "fro") / N
+    return diff, cost
 # -----------------------------------------------------------------------------
 
 def calc_correlation(A, B, N):
@@ -509,18 +509,18 @@ def optimization(NAME, INIT_K_BACKBONE, ETA, ALPHA):
     C_normalized, N = read_normalized_C(FILE_READ)
     K = set_init_K(N, INIT_K_BACKBONE)
     tmp_C, error_flag = convert_K_into_C(K, N)
-    Diff, Cost = calc_diff_Cost(tmp_C, C_normalized, N)
-    print("Initial Cost = %f" % Cost)
+    diff, cost = calc_diff_cost(tmp_C, C_normalized, N)
+    print("Initial Cost = %f" % cost)
     step = 0
     fp = open(FILE_LOG, "w")
-    print("%d\t%e" % (step, Cost), file=fp)
+    print("%d\t%e" % (step, cost), file=fp)
     # -------------------------------------------------------------------------
     while True:
         step += 1
         tmp_K = K.copy()
-        tmp_Cost = Cost
+        tmp_cost = cost
 
-        K -= ETA * Diff
+        K -= ETA * diff
         C, error_flag = convert_K_into_C(K, N)
 
         if error_flag:
@@ -529,9 +529,9 @@ def optimization(NAME, INIT_K_BACKBONE, ETA, ALPHA):
             np.savetxt(FILE_OUT, tmp_K, fmt="%e")
             break
 
-        Diff, Cost = calc_diff_Cost(C, C_normalized, N)
-        print("%d\t%e" % (step, Cost), file=fp)
-        delta = tmp_Cost - Cost
+        diff, cost = calc_diff_cost(C, C_normalized, N)
+        print("%d\t%e" % (step, cost), file=fp)
+        delta = tmp_cost - cost
         if 0 < delta < STOP_DELTA:
             FILE_OUT = DIR_OPT + "/K_optimized.txt"
             np.savetxt(FILE_OUT, K, fmt="%e")

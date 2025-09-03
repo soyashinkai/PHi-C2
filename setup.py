@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name="phic",
-    version="2.1.2",
+    version="2.1.3",
     author="Soya SHINKAI and Soya HAGIWARA",
     author_email="soya.shinkai@riken.jp",
     license="GPL-3.0",
@@ -21,7 +21,7 @@ setup(
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
         "Operating System :: OS Independent",
     ],
-    install_requires=["numpy", "matplotlib", "scipy", "numba", "click", "pandas", "hic-straw", "cooler", "h5py",],
+    install_requires=["numpy", "matplotlib", "scipy", "click", "pandas", "hic-straw", "cooler", "h5py",],
     entry_points={
         "console_scripts": [
             "phic = src.phic2:cli",

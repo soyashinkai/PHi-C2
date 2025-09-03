@@ -20,7 +20,7 @@ Without preparing a Python environment, PHi-C2 (=<2.0.13) rus on [Google Colab](
 
 ### Requirements
 - PHi-C2 is based on `python3`.
-- Python packages `numpy`, `matplotlib`, `scipy`, `numba`, `click`, `pandas`, `hic-straw`, `cooler`, `h5py`.
+- Python packages `numpy`, `matplotlib`, `scipy`, `click`, `pandas`, `hic-straw`, `cooler`, `h5py`.
 
 To visualize the simulated polymer dynamics and conformations, [VMD](https://www.ks.uiuc.edu/Research/vmd/) is needed.
 
