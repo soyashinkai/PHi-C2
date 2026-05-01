@@ -134,4 +134,6 @@ demo/Bonev_mESCs_observed_KR_chr8_42100000-44525000_res25000bp.txt
 demo/Bonev_mESCs_observed_KR_chr8_42100000-44525000_res25000bp_list.txt
 demo/make_demo_input_by_Straw.py
 demo/ES_mapq30_KR_chr8_42100000-44525000_res25000bp/
+demo/run_tmp.sh
+demo/ES_mapq30_KR_chr2_40000000-65000000_res25000bp/
 

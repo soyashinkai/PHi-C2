@@ -16,11 +16,11 @@ You can install `phic` in a clean environment as follows:
 ![PyPI Downloads](https://static.pepy.tech/badge/phic/month)
 ![PyPI Downloads](https://static.pepy.tech/badge/phic/week)
 
-Without preparing a Python environment, PHi-C2 (=<2.0.13) rus on [Google Colab](https://bit.ly/3rlptGI).
+Without preparing a Python environment, PHi-C2 (=<2.0.13) runs on [Google Colab](https://bit.ly/3rlptGI).
 
 ### Requirements
 - PHi-C2 is based on `python3`.
-- Python packages `numpy`, `matplotlib`, `scipy`, `click`, `pandas`, `hic-straw`, `cooler`, `h5py`.
+- Python packages `numpy`, `matplotlib`, `scipy`, `click`, `pandas`, `hic-straw`, `cooler`, `h5py`, `MDAnalysis`, `tqdm`.
 
 To visualize the simulated polymer dynamics and conformations, [VMD](https://www.ks.uiuc.edu/Research/vmd/) is needed.
 
@@ -54,7 +54,7 @@ Then, execute the following script:
 
 This process may take a few minutes.
 
-The demo uses Hi-C data of mouse embryonic stem cells (chr8: 42,100–44,525 kb, 25-kb resolution, KR normalization) by [Bonev et al.](https://doi.org/10.1016/j.cell.2017.09.043).
+The demo uses Hi-C data of mouse embryonic stem cells (chr2: 40–65 Mb, 25-kb resolution, KR normalization) by [Bonev et al.](https://doi.org/10.1016/j.cell.2017.09.043).
 
 * * *
 
@@ -66,20 +66,17 @@ The demo uses Hi-C data of mouse embryonic stem cells (chr8: 42,100–44,525 kb,
 
     Subcommands:
     fetch-fileinfo
-      |
+          ↓
     preprocessing
-      |
+          ↓
     optimization
-      |-->  plot-optimization
-      |-->  dynamics
-      |-->  sampling
-      |-->  msd
-      |       |--> plot-msd
-      |
-      |-->  rheology
-              |--> plot-tangent
-              |--> plot-compliance
-              |--> plot-modulus
+          ├──> plot-optimization
+          ├──> dynamics
+          ├──> sampling
+          ├──> msd
+          │    └──> plot-msd
+          └──> losstangent
+               └──> plot-losstangent
 
 #### 0. fetch-fileinfo
 
@@ -107,12 +104,12 @@ Example:
       --input               TEXT     Input Hi-C file (.hic or .mcool format)  [required]
       --res                 INTEGER  Resolution of the bin size  [required]
       --plt-max-c           FLOAT    Maximum value of contact map  [required]
-      --for-high-resolution INTEGER  Normalization of contact map for high-resolution case (ex. 1-kb, 500-bp, 200-bp)  [default=0]
+      --for-high-resolution FLAG     Normalization of contact map for high-resolution case (ex. 1-kb, 500-bp, 200-bp)  [default=False]
       --chr                 TEXT     Target chromosome  [required]
       --grs                 INTEGER  Start position of the target genomic region
       --gre                 INTEGER  End position of the target genomic region
       --norm                TEXT     Type of normalization to apply
-      --tolerance           FLOAT    Threshold used to remove segments containing NaN values [required]
+      --tolerance           FLOAT    Threshold used to remove segments containing NaN values  [required]
       --help                         Show this message and exit.
 
 In version 2.1.1 and later, the input data format has been changed to `.hic` or `.mcool`. Additionally, it is now possible to exclude rows and columns containing NaN values from the analysis by specifying their allowed proportion (ranging from 0 to 1) using the `tolerance` parameter.
@@ -122,18 +119,18 @@ When using the `preprocessing` subcommand, a directory will be automatically cre
 The outputs are as follows:
 
     NAME/
-      C_normalized.svg
-      C_normalized.txt
-      P_normalized.svg
-      P_normalized.txt
-      _meta_data/
+    ├── C_normalized.npz
+    ├── C_normalized.svg
+    ├── P_normalized.npz
+    ├── P_normalized.svg
+    └── _meta_data/
 
 Example:
 
-    phic preprocessing --input FILENAME.hic --res 25000 --plt-max-c 0.1 --chr 8 --grs 42100000 --gre 44525000 --norm KR --tolerance 0.6
-    phic preprocessing --input FILENAME.hic --res 250000 --plt-max-c 0.1 --chr 8 --norm KR --tolerance 0.6
+    phic preprocessing --input FILENAME.hic --res 25000 --plt-max-c 0.05 --chr 2 --grs 40000000 --gre 65000000 --norm KR --tolerance 0.4
+    phic preprocessing --input FILENAME.hic --res 100000 --plt-max-c 0.05 --chr 2 --norm KR --tolerance 0.8
 
-<img src="/img/fig1.svg" height="250">
+<!-- <img src="/img/fig1.svg" height="250"> -->
 
 #### 2. optimization
 
@@ -142,16 +139,18 @@ Example:
     Options:
       --name                      TEXT   Target directory name  [required]
       --init-k-backbone           FLOAT  Initial parameter of K_i,i+1  [default=0.5]
-      --learning-rate             FLOAT  Learning rate  [default=1e-4]
-      --stop-condition-parameter  FLOAT  Parameter for the stop condition  [default=1e-4]
+      --stop-condition-parameter  FLOAT  Parameter for the stop condition  [default=1e-7]
+      --backtracking-factor       FLOAT  Backtracking factor  [default=0.7]
+      --gradient-degree           INT    Gradient used for optimizing of K  [default=2]
       --help                             Show this message and exit.
 
 
 The outputs are the followings:
 
-    NAME/data_optimization/
-      K_optimized.txt
-      optimization.log
+    NAME/
+    └── data_optimization/
+        ├── K_optimized.npz
+        └── optimization.log
 
 Example:
 
@@ -171,20 +170,22 @@ Example:
 
 The outputs are the followings:
 
-    NAME/data_optimization/
-      C.svg
-      C_optimized.txt
-      Correlation.png
-      Correlation_distance_corrected.png
-      Cost.svg
-      K.svg
-      P.svg
+    NAME/
+    └── data_optimization/
+        ├── C.svg
+        ├── C_optimized.npz
+        ├── Correlation.png
+        ├── Correlation_distance_corrected.png
+        ├── Cost.svg
+        ├── Eta.svg
+        ├── K.svg
+        └── P.svg
 
 Example:
 
-    phic plot-optimization --name NAME --res 25000 --plt-max-c 0.1 --plt-max-k 0.1
+    phic plot-optimization --name NAME --res 25000 --plt-max-c 0.05 --plt-max-k 0.01
 
-<img src="/img/fig2.svg" height="500">
+<!-- <img src="/img/fig2.svg" height="500"> -->
 
 
 #### 3-2. dynamics
@@ -202,13 +203,15 @@ Example:
 
 The outputs are the followings:
 
-    NAME/data_dynamics/
-      polymer_N{NUMBER-OF-BEADS}.psf
-      sample{SAMPLE-NUMBER}.xyz
+    NAME/
+    └── data_dynamics/
+        ├── polymer_N{NUMBER-OF-BEADS}.psf
+        ├── sample{SAMPLE-NUMBER}.dcd
+        └── sample{SAMPLE-NUMBER}.xyz
 
 Example:
 
-    phic dynamics --name NAME --interval 100 --frame 1000
+    phic dynamics --name NAME --interval 10 --frame 100
 
 #### 3-3. sampling
 
@@ -222,13 +225,15 @@ Example:
 
 The outputs are the followings:
 
-    NAME/data_sampling/
-      polymer_N{NUMBER-OF-BEADS}.psf
-      conformations.xyz
+    NAME/
+    └── data_sampling/
+        ├── polymer_N{NUMBER-OF-BEADS}.psf
+        ├── conformations.dcd
+        └── conformations.xyz
 
 Example:
 
-    phic sampling --name NAME --sample 1000
+    phic sampling --name NAME --sample 100
 
 #### 3-4-1. msd
 
@@ -236,14 +241,15 @@ Example:
 
     Options:
       --name  TEXT     Target directory name  [required]
-      --upper INTEGER  Upper value of the exponent of the normalized time [default=5]
-      --lower INTEGER  Lower value of the exponent of the normalized time [default=-1]
+      --upper INTEGER  Upper value of the exponent of the normalized time  [default=5]
+      --lower INTEGER  Lower value of the exponent of the normalized time  [default=-1]
       --help           Show this message and exit.
 
-The outputs are the followings:
+The output is the following:
 
-    NAME/data_MSD/
-      n{BEAD-NUMBER}.txt
+    NAME/
+    └── data_MSD/
+        └── MSD_matrix.npz
 
 Example:
 
@@ -255,30 +261,27 @@ Example:
 
     Options:
       --name        TEXT     Target directory name  [required]
-      --upper       INTEGER  Upper value of the exponent of the normalized time  [default=5]
-      --lower       INTEGER  Lower value of the exponent of the normalized time  [default=-1]
       --plt-upper   INTEGER  Upper value of the exponent of the normalized time in the spectrum  [required]
       --plt-lower   INTEGER  Lower value of the exponent of the normalized time in the spectrum  [required]
       --plt-max-log FLOAT    Maximum value of log10 MSD  [required]
       --plt-min-log FLOAT    Minimum value of log10 MSD  [required]
       --aspect      FLOAT    Aspect ratio of the spectrum  [default=0.8]
       --help                 Show this message and exit.
-    
-The output is the following:
 
-    NAME/data_MSD/
-      data_MSD_spectrum.txt
-    NAME/data_MSD/figs/
-      MSD_spectrum.svg
-      MSD_curves.png
+The outputs are the followings:
+
+    NAME/
+    └── data_MSD/
+        ├── fig_MSD_curves.png
+        └── fig_MSD_spectrum.svg
 
 Example:
 
-    phic plot-msd --name NAME --plt-upper 3 --plt-lower 0 --plt-max-log 2.0 --plt-min-log 0.5 --aspect 0.2
+    phic plot-msd --name NAME --plt-upper 3 --plt-lower 0 --plt-max-log 2.0 --plt-min-log 0.5 --aspect 1.5
 
-#### 3-5-1. rheology
+#### 3-5-1. losstangent
 
-    phic rheology [OPTIONS]
+    phic losstangent [OPTIONS]
 
     Options:
       --name    TEXT      Target directory name  [required]
@@ -288,22 +291,21 @@ Example:
 
 The outputs are the followings:
 
-    NAME/data_rheology/
-      data_normalized_omega1.txt
-      n{BEAD-NUMBER}.txt
+    NAME/
+    └── data_losstangent/
+        ├── data_normalized_omega1.txt
+        └── losstangent_matrix.npz
 
 Example:
 
-    phic rheology --name NAME
+    phic losstangent --name NAME
 
-#### 3-5-2. plot-tangent
+#### 3-5-2. plot-losstangent
 
-    phic plot-tangent [OPTIONS]
+    phic plot-losstangent [OPTIONS]
 
     Options:
       --name          TEXT      Target directory name  [required]
-      --upper         INTEGER   Upper value of the exponent of the angular frequency  [default=1]
-      --lower         INTEGER   Lower value of the exponent of the angular frequency  [default=-5]
       --plt-upper     INTEGER   Upper value of the exponent of the angular frequency in the spectrum  [required]
       --plt-lower     INTEGER   Lower value of the exponent of the angular frequency in the spectrum  [required]
       --plt-max-log   FLOAT     Maximum value of log10 tanδ  [required]
@@ -312,80 +314,10 @@ Example:
 
 The output is the following:
 
-    NAME/data_rheology/
-      data_tan_spectrum.txt
-    NAME/data_rheology/figs/
-      tan_spectrum.svg
+    NAME/
+    └── data_losstangent/
+        └── fig_losstangent_spectrum.svg
 
 Example:
 
-    phic plot-tangent --name NAME --plt-upper 0 --plt-lower -3 --plt-max-log 0.2
-
-<img src="/img/fig5.svg" height="250">
-
-#### 3-5-3. plot-compliance
-
-    phic plot-compliance [OPTIONS]
-
-    Options:
-      --name          TEXT      Target directory name  [required]
-      --upper         INTEGER   Upper value of the exponent of the angular frequency  [default=1]
-      --lower         INTEGER   Lower value of the exponent of the angular frequency  [default=-5]
-      --plt-upper     INTEGER   Upper value of the exponent of the angular frequency in the spectrum  [required]
-      --plt-lower     INTEGER   Lower value of the exponent of the angular frequency in the spectrum  [required]
-      --plt-max-log   FLOAT     Maximum value of log10 |J*|  [required]
-      --plt-min-log   FLOAT     Minimum value of log10 |J*|  [required]
-      --aspect        FLOAT     Aspect ratio of the spectrum  [default=0.8]
-      --help                    Show this message and exit.
-
-The outputs are the followings:
-
-    NAME/data_rheology/
-      data_J_storage_spectrum.txt
-      data_J_loss_spectrum.txt
-      data_J_abs_spectrum.txt
-    NAME/data_rheology/figs/
-      J_storage_spectrum.svg
-      J_loss_spectrum.svg
-      J_abs_spectrum.svg
-      J_curves.png
-
-Example:
-
-    phic plot-compliance --name NAME --plt-upper 0 --plt-lower -3 --plt-max-log 1.3 --plt-min-log -0.3
-
-<img src="/img/fig3.svg" height="250">
-
-#### 3-5-4. plot-modulus
-
-    phic plot-modulus [OPTIONS]
-
-    Options:
-      --name          TEXT      Target directory name  [required]
-      --upper         INTEGER   Upper value of the exponent of the angular frequency  [default=1]
-      --lower         INTEGER   Lower value of the exponent of the angular frequency  [default=-5]
-      --plt-upper     INTEGER   Upper value of the exponent of the angular frequency in the spectrum  [required]
-      --plt-lower     INTEGER   Lower value of the exponent of the angular frequency in the spectrum  [required]
-      --plt-max-log   FLOAT     Maximum value of log10 |G*|  [required]
-      --plt-min-log   FLOAT     Minimum value of log10 |G*|  [required]
-      --aspect        FLOAT     Aspect ratio of the spectrum  [default=0.8]
-      --help                    Show this message and exit.
-
-The outputs are the followings:
-
-    NAME/data_rheology/
-      data_G_storage_spectrum.txt
-      data_G_loss_spectrum.txt
-      data_G_abs_spectrum.txt
-    NAME/data_rheology/figs/
-      G_storage_spectrum.svg
-      G_loss_spectrum.svg
-      G_abs_spectrum.svg
-      G_curves.png
-
-Example:
-
-    phic plot-modulus --name NAME --plt-upper 0 --plt-lower -3 --plt-max-log 0.4 --plt-min-log -1.2
-
-<img src="/img/fig4.svg" height="250">
-
+    phic plot-losstangent --name NAME --plt-upper 0 --plt-lower -3 --plt-max-log 0.3 --aspect 1.5
