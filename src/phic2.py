@@ -5,14 +5,31 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import pearsonr
 import click
-import hicstraw # for version >= 2.1.0
-import pandas as pd # for version >= 2.1.0
-import cooler # for version >= 2.1.1
-import h5py # for version >= 2.1.1
-import MDAnalysis as mda # for version >= 2.2.0
+# for version >= 2.1.0
+import hicstraw
+import pandas as pd
+# for version >= 2.1.1
+import cooler
+import h5py
+# for version >= 2.2.0
+import MDAnalysis as mda
 from MDAnalysis.coordinates.DCD import DCDWriter
-from tqdm import tqdm # for version >= 2.2.0
-from scipy.linalg import solve_triangular # for version >= 2.2.0
+from tqdm import tqdm
+from scipy.linalg import solve_triangular
+# 2026-05-22: standard-library and new external imports for --json feature
+# for version >= 2.2.1
+import sys
+import json
+import time
+import hashlib
+import socket
+import platform
+import tempfile
+import re
+from datetime import datetime, timezone
+from importlib.metadata import version as _pkg_version
+import psutil  # 2026-05-22: hardware info for runtime_profiles in phic.json
+import hictkpy # 2026-05-22: .hic/.mcool metadata for hic_file_info in phic.json
 # -----------------------------------------------------------------------------
 POINTS_PER_DECADE = 100
 # -----------------------------------------------------------------------------
@@ -211,7 +228,8 @@ def write_psfdata(psf_path, NAME, N):
 # -----------------------------------------------------------------------------
 
 # Supports both .hic and .mcool files.
-def make_input_contact_matrix(FILE_INPUT, RES, CHR, START, END, NORM):
+# def make_input_contact_matrix(FILE_INPUT, RES, CHR, START, END, NORM):  # 2026-05-22: original
+def make_input_contact_matrix(FILE_INPUT, RES, CHR, START, END, NORM, output_dir=None):  # 2026-05-22: added output_dir
     NAME, EXT = os.path.splitext(os.path.basename(FILE_INPUT))
 
     if EXT == ".hic": # for version >= 2.1.0
@@ -269,6 +287,9 @@ def make_input_contact_matrix(FILE_INPUT, RES, CHR, START, END, NORM):
     else: # for version <= 2.0.13
         raise click.UsageError("Version 2.1.0 and above no longer support input in formats other than .hic or .mcool.")
 
+    # 2026-05-22: override auto-computed DIR with canonical output path if provided
+    if output_dir is not None:
+        DIR = output_dir
     os.makedirs(DIR, exist_ok=True)
     return C_input, N_input, DIR, START, END
 # -----------------------------------------------------------------------------
@@ -336,9 +357,253 @@ def write_correlations_meta_data(DIR, r, dcr):
         file.write(f"distance-corrected Pearson correlation coefficient,{dcr}\n")
 # -----------------------------------------------------------------------------
 
-def calc_plot_correlations(C_optimized, C_normalized, N, P_optimized, P_normalized, DIR_OPT):
+# =============================================================================
+# 2026-05-22: helpers for --json output feature (phic.json manifest)
+# =============================================================================
+
+# Key packages to record in runtime_profiles.environment.packages
+_JSON_KEY_PACKAGES = [
+    "click", "cooler", "h5py", "hic-straw", "hictkpy",
+    "matplotlib", "MDAnalysis", "numpy", "pandas",
+    "psutil", "scipy", "tqdm",
+]
+
+
+def _now_iso():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _atomic_write_json(path, data):
+    dir_ = os.path.dirname(os.path.abspath(path)) or "."
+    fd, tmp = tempfile.mkstemp(prefix=".phic.", suffix=".json.tmp", dir=dir_)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def _load_or_init_phic_json(json_path):
+    if os.path.exists(json_path):
+        with open(json_path, encoding="utf-8") as f:
+            return json.load(f)
+    return _empty_phic_json()
+
+
+def _empty_phic_json():
+    # 2026-05-25: updated schema to 2026-05-25; removed source_metadata block
+    # return {  # 2026-05-22: original
+    #     "$schema": "./schemas/phic-json-schema_2026-05-22.json",
+    #     "_comment": "PHi-C2 analysis log. See the schema for field descriptions.",
+    #     "phic_version": "2.2.1",
+    #     "schema_version": "2026-05-22",
+    #     "created_at": _now_iso(),
+    #     "updated_at": _now_iso(),
+    #     "hic_file_info": None,
+    #     "source_metadata": None,
+    #     "runtime_profiles": {},
+    #     "run": None,
+    # }
+    return {
+        "$schema": "./schemas/phic-json-schema_2026-05-25.json",
+        "_comment": "PHi-C2 analysis log. See the schema for field descriptions.",
+        "phic_version": "2.2.1",
+        "schema_version": "2026-05-25",
+        "created_at": _now_iso(),
+        "updated_at": _now_iso(),
+        "hic_file_info": None,
+        "runtime_profiles": {},
+        "run": None,
+    }
+
+
+def _get_key_packages():
+    out = {}
+    for name in _JSON_KEY_PACKAGES:
+        try:
+            out[name] = _pkg_version(name)
+        except Exception:
+            out[name] = None
+    return dict(sorted(out.items()))
+
+
+def _detect_environment():
+    if os.environ.get("CONDA_PREFIX"):
+        env_type = "conda"
+        env_name = os.environ.get("CONDA_DEFAULT_ENV", "")
+        env_prefix = os.environ.get("CONDA_PREFIX", "")
+    elif sys.prefix != sys.base_prefix:
+        env_type = "venv"
+        env_name = os.path.basename(sys.prefix)
+        env_prefix = sys.prefix
+    elif hasattr(sys, "real_prefix"):
+        env_type = "virtualenv"
+        env_name = os.path.basename(sys.prefix)
+        env_prefix = sys.prefix
+    else:
+        env_type = "system"
+        env_name = ""
+        env_prefix = sys.prefix
+    return {
+        "type": env_type,
+        "name": env_name,
+        "prefix": env_prefix,
+        "python_version": platform.python_version(),
+        "python_executable": sys.executable,
+        "packages": _get_key_packages(),
+    }
+
+
+def _detect_gpu():
+    import subprocess as _sub, json as _j
+    try:
+        r = _sub.run(
+            ["nvidia-smi", "--query-gpu=name,driver_version", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            lines = [ln.strip() for ln in r.stdout.strip().splitlines() if ln.strip()]
+            parts = lines[0].split(", ")
+            return {"vendor": "NVIDIA", "name": parts[0], "count": len(lines),
+                    "driver": parts[1] if len(parts) > 1 else None}
+    except Exception:
+        pass
+    try:
+        r = _sub.run(["rocm-smi", "--showproductname", "--json"],
+                     capture_output=True, text=True, timeout=5)
+        if r.returncode == 0:
+            data = _j.loads(r.stdout)
+            cards = [v for k, v in data.items() if k.startswith("card")]
+            if cards:
+                return {"vendor": "AMD", "name": cards[0].get("Card series", ""),
+                        "count": len(cards), "driver": "ROCm"}
+    except Exception:
+        pass
+    return None
+
+
+def _detect_math_libraries():
+    blas_backend = None
+    mkl_version = None
+    try:
+        try:
+            config = np.show_config(mode="dicts")
+            blas_backend = (
+                config.get("Build Dependencies", {})
+                      .get("blas", {})
+                      .get("name")
+            )
+        except TypeError:
+            libs = getattr(np.__config__, "blas_opt_info", {}).get("libraries", [])
+            if any("mkl" in l for l in libs):
+                blas_backend = "mkl"
+            elif any("openblas" in l for l in libs):
+                blas_backend = "openblas"
+    except Exception:
+        pass
+    try:
+        mkl_version = _pkg_version("mkl")
+    except Exception:
+        pass
+    return {
+        "blas_backend": blas_backend,
+        "mkl": mkl_version,
+        "cusolver": None,  # not applicable for CPU-only version
+    }
+
+
+def _gather_runtime():
+    return {
+        "hostname": socket.gethostname(),
+        "os": f"{platform.system()} {platform.release()}",
+        "architecture": platform.machine(),
+        "cpu": {
+            "processor": platform.processor() or platform.machine(),
+            "logical_cores": os.cpu_count(),
+            "physical_cores": psutil.cpu_count(logical=False),
+        },
+        "memory_gb": round(psutil.virtual_memory().total / (1024 ** 3), 2),
+        "gpu": _detect_gpu(),
+        "math_libraries": _detect_math_libraries(),
+        "phic_version": "2.2.1",
+        "environment": _detect_environment(),
+    }
+
+
+def _runtime_profile_id(runtime):
+    canonical = json.dumps(runtime, sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return f"rt_{digest[:8]}"
+
+
+def _upsert_runtime_profile(phic_json, runtime):
+    profile_id = _runtime_profile_id(runtime)
+    profiles = phic_json.setdefault("runtime_profiles", {})
+    if profile_id not in profiles:
+        profiles[profile_id] = runtime
+    return profile_id
+
+
+def _get_or_init_run(phic_json, run_id, output_dir, run_uuid=None):
+    if phic_json.get("run") is None:
+        phic_json["run"] = {
+            "run_id": run_id,
+            "run_uuid": run_uuid,
+            "output_dir": output_dir,
+            "created_at": _now_iso(),
+            "updated_at": _now_iso(),
+            "preprocessing": None,
+            "optimization": None,
+            "plot_optimization": None,
+            "msd": None,
+            "losstangent": None,
+        }
+    else:
+        if run_uuid is not None and phic_json["run"].get("run_uuid") is None:
+            phic_json["run"]["run_uuid"] = run_uuid
+    return phic_json["run"]
+
+
+def _read_hic_fileinfo(file_input):
+    _, ext = os.path.splitext(file_input)
+    ext = ext.lower()
+    if ext not in (".hic", ".mcool"):
+        raise click.UsageError("Unsupported file format. Use .hic or .mcool.")
+    mrf = hictkpy.MultiResFile(file_input)
+    resolutions = [int(r) for r in mrf.resolutions()]
+    f = hictkpy.File(file_input, resolutions[-1])
+    attrs = f.attributes()
+    assembly = attrs.get("assembly", None)
+    chroms_raw = f.chromosomes()
+    chromosomes = [{"name": k, "length": int(v)} for k, v in chroms_raw.items()
+                   if k.upper() != "ALL"]
+    normalizations = list(f.avail_normalizations())
+    if ext == ".hic" and "NONE" not in normalizations:
+        normalizations = ["NONE"] + normalizations
+    fmt = "hic" if ext == ".hic" else "mcool"
+    return {
+        "input_file": file_input,
+        "format": fmt,
+        "genome_assembly": assembly,
+        "chromosomes": chromosomes,
+        "resolutions": resolutions,
+        "normalizations": normalizations,
+    }
+# =============================================================================
+
+# def calc_plot_correlations(C_optimized, C_normalized, N, P_optimized, P_normalized, DIR_OPT):  # 2026-05-22: original
+def calc_plot_correlations(C_optimized, C_normalized, N, P_optimized, P_normalized, DIR_OPT, draw_figures=True):  # 2026-05-22: added draw_figures parameter
     r, Optimized, Normalized = calc_correlation(C_optimized, C_normalized, N)
     dcr, Optimized_dcr, Normalized_dcr = calc_distance_corrected_correlation(C_optimized, C_normalized, N, P_optimized[:, 1], P_normalized[:, 1])
+    if not draw_figures:
+        return r, dcr
     # -------------------------------------------------------------------------
     plt.rcParams["font.family"] = "Arial"
     plt.rcParams["font.size"] = 36
@@ -396,7 +661,13 @@ def cli():
 @cli.command()
 @click.option("--input", "FILE_INPUT", required=True,
               help="Input Hi-C file (.hic or .mcool format)")
-def fetch_fileinfo(FILE_INPUT):
+# 2026-05-22: added --json and --json-path for phic.json output
+@click.option("--json", "WRITE_JSON", is_flag=True, default=False,
+              help="Write hic_file_info block to phic.json in the workspace")
+@click.option("--json-path", "JSON_PATH", default="phic.json",
+              help="Path to phic.json  [default: ./phic.json]")
+# def fetch_fileinfo(FILE_INPUT):  # 2026-05-22: original
+def fetch_fileinfo(FILE_INPUT, WRITE_JSON, JSON_PATH):  # 2026-05-22: added WRITE_JSON, JSON_PATH
     _, EXT = os.path.splitext(FILE_INPUT)
     if EXT == ".hic":  # for .hic files
         hic = hicstraw.HiCFile(FILE_INPUT)
@@ -422,6 +693,18 @@ def fetch_fileinfo(FILE_INPUT):
         print("-------------------------")
     else:
         raise click.UsageError("Unsupported file format. Use .hic or .mcool.")
+    # 2026-05-22: write hic_file_info block to phic.json when --json is given
+    if WRITE_JSON:
+        phic_data = _load_or_init_phic_json(JSON_PATH)
+        runtime = _gather_runtime()
+        profile_id = _upsert_runtime_profile(phic_data, runtime)
+        fileinfo = _read_hic_fileinfo(FILE_INPUT)
+        fileinfo["fetched_at"] = _now_iso()
+        fileinfo["runtime_profile_id"] = profile_id
+        phic_data["hic_file_info"] = fileinfo
+        phic_data["updated_at"] = _now_iso()
+        _atomic_write_json(JSON_PATH, phic_data)
+        click.echo(f"Written hic_file_info to {JSON_PATH}")
 # -----------------------------------------------------------------------------
 
 @cli.command()
@@ -443,8 +726,48 @@ def fetch_fileinfo(FILE_INPUT):
               help="Type of normalization to apply")
 @click.option("--tolerance", "TOLERANCE", type=float, required=True,
               help="Threshold used to remove segments containing NaN values")
-def preprocessing(FILE_INPUT, RES, PLT_MAX_C, HIGH_RESOLUTION, CHR, START, END, NORM, TOLERANCE):
-    C_input, N_input, DIR, START, END = make_input_contact_matrix(FILE_INPUT, RES, CHR, START, END, NORM)
+# 2026-05-22: added --name option to write output directly to canonical path
+@click.option("--name", "NAME", default=None,
+              help="Output directory name (canonical path); if omitted, auto-named by script")
+# 2026-05-22: added --json and --json-path for phic.json output
+@click.option("--json", "WRITE_JSON", is_flag=True, default=False,
+              help="Write preprocessing block to phic.json in the workspace")
+@click.option("--json-path", "JSON_PATH", default="phic.json",
+              help="Path to phic.json  [default: ./phic.json]")
+# 2026-05-22: added --run-uuid for Data Conductor job UUID7 linkage
+@click.option("--run-uuid", "RUN_UUID", default=None,
+              help="Data Conductor job UUID7; written to run.run_uuid in phic.json (null if omitted)")
+# def preprocessing(FILE_INPUT, RES, PLT_MAX_C, HIGH_RESOLUTION, CHR, START, END, NORM, TOLERANCE):  # 2026-05-22: original
+def preprocessing(FILE_INPUT, RES, PLT_MAX_C, HIGH_RESOLUTION, CHR, START, END, NORM, TOLERANCE, NAME, WRITE_JSON, JSON_PATH, RUN_UUID):  # 2026-05-22: added NAME, WRITE_JSON, JSON_PATH, RUN_UUID
+    # 2026-05-22: capture start time and gather runtime info before any computation
+    started_at = _now_iso()
+    t0 = time.monotonic()
+    if WRITE_JSON:
+        _runtime_json = _gather_runtime()
+        _profile_id_json = None  # set after DIR is known (run_id needs DIR)
+    C_input, N_input, DIR, START, END = make_input_contact_matrix(FILE_INPUT, RES, CHR, START, END, NORM, output_dir=NAME)
+    # 2026-05-22: write status "running" once DIR (= run_id) is known
+    if WRITE_JSON:
+        try:
+            _phic_data_json = _load_or_init_phic_json(JSON_PATH)
+            _profile_id_json = _upsert_runtime_profile(_phic_data_json, _runtime_json)
+            _run_json = _get_or_init_run(_phic_data_json, DIR, DIR + "/", run_uuid=RUN_UUID)
+            _run_json["preprocessing"] = {
+                "status": "running",
+                "started_at": started_at,
+                "runtime_profile_id": _profile_id_json,
+                "parameters": {
+                    "input": FILE_INPUT, "chr": CHR, "res": RES,
+                    "grs": START, "gre": END, "norm": NORM,
+                    "tolerance": TOLERANCE, "plt_max_c": PLT_MAX_C,
+                    "for_high_resolution": HIGH_RESOLUTION,
+                },
+            }
+            _run_json["updated_at"] = started_at
+            _phic_data_json["updated_at"] = started_at
+            _atomic_write_json(JSON_PATH, _phic_data_json)
+        except Exception as _e:
+            click.echo(f"Warning: could not write running status to {JSON_PATH}: {_e}", err=True)
     C_for_phic, N_for_phic, nan_indices = remove_invalid_segments(C_input, N_input, TOLERANCE)
     write_meta_data(DIR, FILE_INPUT, NORM, CHR, START, END, RES, N_input, N_for_phic, nan_indices, TOLERANCE)
     # -------------------------------------------------------------------------
@@ -462,6 +785,16 @@ def preprocessing(FILE_INPUT, RES, PLT_MAX_C, HIGH_RESOLUTION, CHR, START, END, 
     else:
         C_normalized = calc_C_normalized(C_for_phic)
     np.savez_compressed(FILE_OUT_C_NORMALIZED, C_normalized=C_normalized)
+    # 2026-05-22: capture contact_stats from normalized matrix (0-1 range) before NaN rows are reinserted
+    if WRITE_JSON:
+        _cn_upper = C_normalized[np.triu_indices(C_normalized.shape[0], k=1)]
+        _cn_valid = _cn_upper[~np.isnan(_cn_upper)]
+        _contact_stats_json = {
+            "min": float(_cn_valid.min()) if len(_cn_valid) > 0 else None,
+            "max": float(_cn_valid.max()) if len(_cn_valid) > 0 else None,
+            "mean": float(_cn_valid.mean()) if len(_cn_valid) > 0 else None,
+            "nonzero_fraction": float((_cn_valid > 0).sum() / len(_cn_valid)) if len(_cn_valid) > 0 else None,
+        }
     # -------------------------------------------------------------------------
     for idx in nan_indices:
         N = C_normalized.shape[0]
@@ -493,6 +826,52 @@ def preprocessing(FILE_INPUT, RES, PLT_MAX_C, HIGH_RESOLUTION, CHR, START, END, 
     plt.tight_layout()
     plt.savefig(FILE_FIG_P_NORMALIZED)
     plt.close()
+    # -------------------------------------------------------------------------
+    # 2026-05-22: write completed preprocessing block to phic.json
+    if WRITE_JSON:
+        try:
+            elapsed_sec = round(time.monotonic() - t0, 3)
+            completed_at = _now_iso()
+            _phic_data_json = _load_or_init_phic_json(JSON_PATH)
+            _profile_id_json = _upsert_runtime_profile(_phic_data_json, _runtime_json)
+            _run_json = _get_or_init_run(_phic_data_json, DIR, DIR + "/", run_uuid=RUN_UUID)
+            _run_json["preprocessing"] = {
+                "status": "completed",
+                "started_at": started_at,
+                "completed_at": completed_at,
+                "elapsed_sec": elapsed_sec,
+                "runtime_profile_id": _profile_id_json,
+                "parameters": {
+                    "input": FILE_INPUT, "chr": CHR, "res": RES,
+                    "grs": START, "gre": END, "norm": NORM,
+                    "tolerance": TOLERANCE, "plt_max_c": PLT_MAX_C,
+                    "for_high_resolution": HIGH_RESOLUTION,
+                },
+                "matrix_shape": [N_input, N_input],
+                "n_bins_total": N_input,
+                "n_bins_removed_nan": int(len(nan_indices)),
+                "n_bins_kept": N_for_phic,
+                "start_position": START,
+                "end_position": END,
+                "input_matrix_size": N_input,
+                "phic_matrix_size": N_for_phic,
+                "removed_bin_indices": [int(i) for i in nan_indices],
+                "contact_stats": _contact_stats_json,
+                "files": {
+                    "C_normalized": DIR + "/C_normalized.npz",
+                    "P_normalized": DIR + "/P_normalized.npz",
+                    "C_normalized_figure": DIR + "/C_normalized.svg",
+                    "P_normalized_figure": DIR + "/P_normalized.svg",
+                    "removed_segments": DIR + "/_meta_data/_removed_segments.txt",
+                    "valid_segments":   DIR + "/_meta_data/_remaining_segments.txt",
+                },
+            }
+            _run_json["updated_at"] = completed_at
+            _phic_data_json["updated_at"] = completed_at
+            _atomic_write_json(JSON_PATH, _phic_data_json)
+            click.echo(f"Written preprocessing block to {JSON_PATH}")
+        except Exception as _e:
+            click.echo(f"Warning: could not write completed block to {JSON_PATH}: {_e}", err=True)
 # -----------------------------------------------------------------------------
 
 @cli.command()
@@ -506,7 +885,16 @@ def preprocessing(FILE_INPUT, RES, PLT_MAX_C, HIGH_RESOLUTION, CHR, START, END, 
               help="Backtracking factor  [default=0.7]")
 @click.option("--gradient-degree", "gradient_degree", type=int, default=2,
               help="Gradient used for optimizing of K  [default=2]")
-def optimization(NAME, init_k_backbone, alpha, beta, gradient_degree):
+# 2026-05-22: added --json and --json-path for phic.json output
+@click.option("--json", "WRITE_JSON", is_flag=True, default=False,
+              help="Write optimization block to phic.json in the workspace")
+@click.option("--json-path", "JSON_PATH", default="phic.json",
+              help="Path to phic.json  [default: ./phic.json]")
+# 2026-05-22: added --run-uuid for Data Conductor job UUID7 linkage
+@click.option("--run-uuid", "RUN_UUID", default=None,
+              help="Data Conductor job UUID7; written to run.run_uuid in phic.json (null if omitted)")
+# def optimization(NAME, init_k_backbone, alpha, beta, gradient_degree):  # 2026-05-22: original
+def optimization(NAME, init_k_backbone, alpha, beta, gradient_degree, WRITE_JSON, JSON_PATH, RUN_UUID):  # 2026-05-22: added WRITE_JSON, JSON_PATH, RUN_UUID
     def gradient_degree_1(diff, C):
         return diff
 
@@ -517,6 +905,12 @@ def optimization(NAME, init_k_backbone, alpha, beta, gradient_degree):
         1: gradient_degree_1,
         2: gradient_degree_2,
     }
+    # -------------------------------------------------------------------------
+    # 2026-05-22: capture start time before any computation
+    started_at = _now_iso()
+    t0 = time.monotonic()
+    if WRITE_JSON:
+        _runtime_json = _gather_runtime()
     # -------------------------------------------------------------------------
     write_optimization_meta_data(NAME, init_k_backbone, alpha, beta, gradient_degree, version="2.2.0")
     # -------------------------------------------------------------------------
@@ -545,7 +939,7 @@ def optimization(NAME, init_k_backbone, alpha, beta, gradient_degree):
     # -------------------------------------------------------------------------
     while True:
         step += 1
-        
+
         # Temporarily store the current state
         K_prev = K.copy()
         C_prev = C
@@ -597,6 +991,69 @@ def optimization(NAME, init_k_backbone, alpha, beta, gradient_degree):
             break
     # -------------------------------------------------------------------------
     fp.close()
+    # -------------------------------------------------------------------------
+    # 2026-05-22: write completed optimization block to phic.json
+    if WRITE_JSON:
+        try:
+            elapsed_sec = round(time.monotonic() - t0, 3)
+            completed_at = _now_iso()
+            # gradient norm at final step (Frobenius norm of the gradient tensor)
+            final_grad = gradient(diff, C)
+            final_gradient_norm = float(np.linalg.norm(final_grad, "fro"))
+            # K stats (non-NaN elements)
+            k_stats = {
+                "min": float(np.nanmin(K)),
+                "max": float(np.nanmax(K)),
+                "mean": float(np.nanmean(K)),
+            }
+            # correlations between C_optimized and C_normalized
+            C_normalized_corr, N_corr = read_normalized_C(FILE_READ)  # fresh load with NaN preserved
+            C_optimized_corr, _ = convert_K_into_C(K, J_over_N, I_N)
+            P_normalized_corr = np.load(NAME + "/P_normalized.npz")["P_normalized"]
+            # infer resolution from saved P_normalized (P[:,0] = RES * arange(N))
+            RES_corr = int(P_normalized_corr[1, 0])
+            P_optimized_corr = calc_Ps(C_optimized_corr, RES_corr)
+            r_corr, _, _ = calc_correlation(C_optimized_corr, C_normalized_corr, N_corr)
+            dcr_corr, _, _ = calc_distance_corrected_correlation(
+                C_optimized_corr, C_normalized_corr, N_corr,
+                P_optimized_corr[:, 1], P_normalized_corr[:, 1])
+            _phic_data_json = _load_or_init_phic_json(JSON_PATH)
+            _profile_id_json = _upsert_runtime_profile(_phic_data_json, _runtime_json)
+            _run_json = _get_or_init_run(_phic_data_json, NAME, NAME + "/", run_uuid=RUN_UUID)
+            _run_json["optimization"] = {
+                "status": "completed",
+                "started_at": started_at,
+                "completed_at": completed_at,
+                "elapsed_sec": elapsed_sec,
+                "runtime_profile_id": _profile_id_json,
+                "hyperparameters": {
+                    "initial_k_backbone": init_k_backbone,
+                    "gradient_degree": gradient_degree,
+                    "stop_condition": alpha,
+                    "backtracking_factor": beta,
+                },
+                "iterations": step,
+                "final_cost": float(cost),
+                "final_gradient_norm": final_gradient_norm,
+                "converged": True,
+                "K_stats": k_stats,
+                "correlation": {
+                    "pearson": round(float(r_corr), 6),
+                },
+                "correlation_distance_corrected": {
+                    "pearson": round(float(dcr_corr), 6),
+                },
+                "files": {
+                    "K_optimized": DIR_OPT + "/K_optimized.npz",
+                    "log": FILE_LOG,
+                },
+            }
+            _run_json["updated_at"] = completed_at
+            _phic_data_json["updated_at"] = completed_at
+            _atomic_write_json(JSON_PATH, _phic_data_json)
+            click.echo(f"Written optimization block to {JSON_PATH}")
+        except Exception as _e:
+            click.echo(f"Warning: could not write optimization block to {JSON_PATH}: {_e}", err=True)
 # -----------------------------------------------------------------------------
 
 @cli.command()
@@ -608,7 +1065,23 @@ def optimization(NAME, init_k_backbone, alpha, beta, gradient_degree):
               help="Maximum value of contact map")
 @click.option("--plt-max-k", "PLT_MAX_K", type=float, required=True,
               help="Maximum and minimum values of optimized K map")
-def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K):
+# 2026-05-22: added --json and --json-path for phic.json output
+@click.option("--json", "WRITE_JSON", is_flag=True, default=False,
+              help="Write plot_optimization block to phic.json in the workspace")
+@click.option("--json-path", "JSON_PATH", default="phic.json",
+              help="Path to phic.json  [default: ./phic.json]")
+@click.option("--no-figures", "NO_FIGURES", is_flag=True, default=False,
+              help="Skip all matplotlib figure generation (faster; use when figures are not needed)")
+# 2026-05-22: added --run-uuid for Data Conductor job UUID7 linkage
+@click.option("--run-uuid", "RUN_UUID", default=None,
+              help="Data Conductor job UUID7; written to run.run_uuid in phic.json (null if omitted)")
+# def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K):  # 2026-05-22: original
+def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K, WRITE_JSON, JSON_PATH, NO_FIGURES, RUN_UUID):  # 2026-05-22: added WRITE_JSON, JSON_PATH, NO_FIGURES, RUN_UUID
+    # 2026-05-22: capture start time before any computation
+    started_at = _now_iso()
+    t0 = time.monotonic()
+    if WRITE_JSON:
+        _runtime_json = _gather_runtime()
     # READ & OUTPUT FILES
     DIR_OPT = NAME + "/data_optimization"
     FILE_READ_C = NAME + "/C_normalized.npz"
@@ -622,12 +1095,13 @@ def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K):
     FILE_FIG_Cost = DIR_OPT + "/Cost.svg"
     FILE_FIG_ETA = DIR_OPT + "/Eta.svg"
     # -------------------------------------------------------------------------
-    plt.rcParams["font.family"] = "Arial"
-    plt.rcParams["font.size"] = 36
-    cmap_for_C = plt.get_cmap("magma_r")
-    cmap_for_C.set_bad(color=(0.8, 0.8, 0.8))
-    cmap_for_K = plt.get_cmap("bwr")
-    cmap_for_K.set_bad(color=(0.8, 0.8, 0.8))
+    if not NO_FIGURES:
+        plt.rcParams["font.family"] = "Arial"
+        plt.rcParams["font.size"] = 36
+        cmap_for_C = plt.get_cmap("magma_r")
+        cmap_for_C.set_bad(color=(0.8, 0.8, 0.8))
+        cmap_for_K = plt.get_cmap("bwr")
+        cmap_for_K.set_bad(color=(0.8, 0.8, 0.8))
     # -------------------------------------------------------------------------
     C_normalized, N = read_normalized_C(FILE_READ_C)
     K = np.load(FILE_READ_K)["K_optimized"]
@@ -655,81 +1129,125 @@ def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K):
     P_normalized = calc_Ps(C_normalized, RES)
     P_optimized = calc_Ps(C_optimized, RES)
     # -------------------------------------------------------------------------
-    r, dcr = calc_plot_correlations(C_optimized, C_normalized, N, P_optimized, P_normalized, DIR_OPT)
+    r, dcr = calc_plot_correlations(C_optimized, C_normalized, N, P_optimized, P_normalized, DIR_OPT, draw_figures=not NO_FIGURES)
     write_correlations_meta_data(NAME, r, dcr)
+    if not NO_FIGURES:
+        # -------------------------------------------------------------------------
+        plt.figure(figsize=(10, 10))
+        plt.text(N - 1, 0, "Hi-C", fontweight="bold", ha="right", va="top")
+        plt.text(0, N - 1, "PHi-C\n" + r"($r$={0:.3f}, $r'$={1:.3f})".format(r, dcr),
+                 fontweight="bold", ha="left", va="bottom")
+        plt.imshow(C,
+                   cmap=cmap_for_C,
+                   interpolation="none", vmin=0, vmax=PLT_MAX_C)
+        plt.colorbar(ticks=[0, PLT_MAX_C], shrink=0.5, orientation="vertical",
+                     label="Normalized contact probability")
+        plt.axis("off")
+        plt.savefig(FILE_FIG_C)
+        plt.close()
+        # -------------------------------------------------------------------------
+        plt.figure(figsize=(10, 10))
+        plt.imshow(K,
+                   cmap=cmap_for_K,
+                   interpolation="none", vmin=-PLT_MAX_K, vmax=PLT_MAX_K)
+        plt.colorbar(ticks=[-PLT_MAX_K, 0, PLT_MAX_K], shrink=0.5, orientation="vertical",
+                     label=r"Normalized $K_{ij}$")
+        plt.axis("off")
+        plt.savefig(FILE_FIG_K)
+        plt.close()
+        # -------------------------------------------------------------------------
+        plt.figure(figsize=(10, 10))
+        plt.gca().spines["right"].set_visible(False)
+        plt.gca().spines["top"].set_visible(False)
+        plt.gca().yaxis.set_ticks_position("left")
+        plt.gca().xaxis.set_ticks_position("bottom")
+        plt.xscale("log")
+        plt.yscale("log")
+        plt.xlabel("Genomic distance [bp]", fontweight="bold")
+        plt.ylabel("Normalized contact probability", fontweight="bold")
+        plt.plot(P_normalized[1:, 0], P_normalized[1:, 1],
+                 label="Hi-C", linewidth=6)
+        plt.plot(P_optimized[1:, 0], P_optimized[1:, 1],
+                 label="PHi-C", linewidth=3)
+        plt.legend(handlelength=1, loc="upper right")
+        plt.tight_layout()
+        plt.savefig(FILE_FIG_P)
+        plt.close()
+        # -------------------------------------------------------------------------
+        log_data = np.loadtxt(FILE_READ_LOG, delimiter="\t", skiprows=1)
+        data = log_data[:, 0:2]  # step and cost columns
+        plt.figure(figsize=(10, 5))
+        plt.gca().spines["right"].set_visible(False)
+        plt.gca().spines["top"].set_visible(False)
+        plt.gca().yaxis.set_ticks_position("left")
+        plt.gca().xaxis.set_ticks_position("bottom")
+        plt.xlabel("Iteration", fontweight="bold")
+        plt.ylabel("Cost", fontweight="bold")
+        plt.xlim(0, data[-1, 0])
+        plt.ylim(0, data[0, 1])
+        plt.plot(data[:, 0], data[:, 1], linewidth=4)
+        plt.tight_layout()
+        plt.savefig(FILE_FIG_Cost)
+        plt.close()
+        # -------------------------------------------------------------------------
+        data = log_data[:, [0, 2]]  # step and eta columns
+        plt.figure(figsize=(10, 5))
+        plt.gca().spines["right"].set_visible(False)
+        plt.gca().spines["top"].set_visible(False)
+        plt.gca().yaxis.set_ticks_position("left")
+        plt.gca().xaxis.set_ticks_position("bottom")
+        plt.xlabel("Iteration", fontweight="bold")
+        plt.ylabel("Learning rate", fontweight="bold")
+        plt.xlim(0, data[-1, 0])
+        # plt.ylim(0, data[0, 1])
+        plt.plot(data[:, 0], data[:, 1], linewidth=4)
+        plt.yscale("log")
+        plt.tight_layout()
+        plt.savefig(FILE_FIG_ETA)
+        plt.close()
     # -------------------------------------------------------------------------
-    plt.figure(figsize=(10, 10))
-    plt.text(N - 1, 0, "Hi-C", fontweight="bold", ha="right", va="top")
-    plt.text(0, N - 1, "PHi-C\n" + r"($r$={0:.3f}, $r'$={1:.3f})".format(r, dcr),
-             fontweight="bold", ha="left", va="bottom")
-    plt.imshow(C, 
-               cmap=cmap_for_C,
-               interpolation="none", vmin=0, vmax=PLT_MAX_C)
-    plt.colorbar(ticks=[0, PLT_MAX_C], shrink=0.5, orientation="vertical",
-                 label="Normalized contact probability")
-    plt.axis("off")
-    plt.savefig(FILE_FIG_C)
-    plt.close()
-    # -------------------------------------------------------------------------
-    plt.figure(figsize=(10, 10))
-    plt.imshow(K,
-               cmap=cmap_for_K,
-               interpolation="none", vmin=-PLT_MAX_K, vmax=PLT_MAX_K)
-    plt.colorbar(ticks=[-PLT_MAX_K, 0, PLT_MAX_K], shrink=0.5, orientation="vertical",
-                 label=r"Normalized $K_{ij}$")
-    plt.axis("off")
-    plt.savefig(FILE_FIG_K)
-    plt.close()
-    # -------------------------------------------------------------------------
-    plt.figure(figsize=(10, 10))
-    plt.gca().spines["right"].set_visible(False)
-    plt.gca().spines["top"].set_visible(False)
-    plt.gca().yaxis.set_ticks_position("left")
-    plt.gca().xaxis.set_ticks_position("bottom")
-    plt.xscale("log")
-    plt.yscale("log")
-    plt.xlabel("Genomic distance [bp]", fontweight="bold")
-    plt.ylabel("Normalized contact probability", fontweight="bold")
-    plt.plot(P_normalized[1:, 0], P_normalized[1:, 1],
-             label="Hi-C", linewidth=6)
-    plt.plot(P_optimized[1:, 0], P_optimized[1:, 1],
-             label="PHi-C", linewidth=3)
-    plt.legend(handlelength=1, loc="upper right")
-    plt.tight_layout()
-    plt.savefig(FILE_FIG_P)
-    plt.close()
-    # -------------------------------------------------------------------------
-    log_data = np.loadtxt(FILE_READ_LOG, delimiter="\t", skiprows=1)
-    data = log_data[:, 0:2]  # step and cost columns
-    plt.figure(figsize=(10, 5))
-    plt.gca().spines["right"].set_visible(False)
-    plt.gca().spines["top"].set_visible(False)
-    plt.gca().yaxis.set_ticks_position("left")
-    plt.gca().xaxis.set_ticks_position("bottom")
-    plt.xlabel("Iteration", fontweight="bold")
-    plt.ylabel("Cost", fontweight="bold")
-    plt.xlim(0, data[-1, 0])
-    plt.ylim(0, data[0, 1])
-    plt.plot(data[:, 0], data[:, 1], linewidth=4)
-    plt.tight_layout()
-    plt.savefig(FILE_FIG_Cost)
-    plt.close()
-    # -------------------------------------------------------------------------
-    data = log_data[:, [0, 2]]  # step and eta columns
-    plt.figure(figsize=(10, 5))
-    plt.gca().spines["right"].set_visible(False)
-    plt.gca().spines["top"].set_visible(False)
-    plt.gca().yaxis.set_ticks_position("left")
-    plt.gca().xaxis.set_ticks_position("bottom")
-    plt.xlabel("Iteration", fontweight="bold")
-    plt.ylabel("Learning rate", fontweight="bold")
-    plt.xlim(0, data[-1, 0])
-    # plt.ylim(0, data[0, 1])
-    plt.plot(data[:, 0], data[:, 1], linewidth=4)
-    plt.yscale("log")
-    plt.tight_layout()
-    plt.savefig(FILE_FIG_ETA)
-    plt.close()
+    # 2026-05-22: write completed plot_optimization block to phic.json
+    if WRITE_JSON:
+        try:
+            elapsed_sec = round(time.monotonic() - t0, 3)
+            completed_at = _now_iso()
+            _phic_data_json = _load_or_init_phic_json(JSON_PATH)
+            _profile_id_json = _upsert_runtime_profile(_phic_data_json, _runtime_json)
+            _run_json = _get_or_init_run(_phic_data_json, NAME, NAME + "/", run_uuid=RUN_UUID)
+            _run_json["plot_optimization"] = {
+                "status": "completed",
+                "started_at": started_at,
+                "completed_at": completed_at,
+                "elapsed_sec": elapsed_sec,
+                "runtime_profile_id": _profile_id_json,
+                "parameters": {
+                    "res": RES,
+                    "plt_max_c": PLT_MAX_C,
+                    "plt_max_k": PLT_MAX_K,
+                },
+                "correlations": {
+                    "pearson_r": round(float(r), 16),
+                    "pearson_r_distance_corrected": round(float(dcr), 16),
+                },
+                "files": {
+                    "C_optimized": FILE_OUT_C_OPT,
+                    **({"figures": {
+                        "C":    FILE_FIG_C,
+                        "P":    FILE_FIG_P,
+                        "K":    FILE_FIG_K,
+                        "Cost": FILE_FIG_Cost,
+                        "Eta":  FILE_FIG_ETA,
+                        "Correlation": DIR_OPT + "/Correlation.png",
+                        "Correlation_distance_corrected": DIR_OPT + "/Correlation_distance_corrected.png",
+                    }} if not NO_FIGURES else {}),
+                },
+            }
+            _run_json["updated_at"] = completed_at
+            _phic_data_json["updated_at"] = completed_at
+            _atomic_write_json(JSON_PATH, _phic_data_json)
+            click.echo(f"Written plot_optimization block to {JSON_PATH}")
+        except Exception as _e:
+            click.echo(f"Warning: could not write plot_optimization block to {JSON_PATH}: {_e}", err=True)
 # -----------------------------------------------------------------------------
 
 @cli.command()
@@ -822,19 +1340,25 @@ def sampling(NAME, SAMPLE, SEED):
 @cli.command()
 @click.option("--name", "NAME", required=True,
               help="Target directory name")
-@click.option("--upper", "UPPER", type=int, default=5,
-              help="Upper value of the exponent of the normalized time  [default=5]")
-@click.option("--lower", "LOWER", type=int, default=-1,
-              help="Lower value of the exponent of the normalized time  [default=-1]")
-def msd(NAME, UPPER, LOWER):
-    M = POINTS_PER_DECADE * (UPPER - LOWER)
-    exponents = LOWER + np.arange(M + 1) / POINTS_PER_DECADE
-    t = 10.0 ** exponents
+# 2026-05-22: added --json and --json-path for phic.json output
+@click.option("--json", "WRITE_JSON", is_flag=True, default=False,
+              help="Write msd block to phic.json in the workspace")
+@click.option("--json-path", "JSON_PATH", default="phic.json",
+              help="Path to phic.json  [default: ./phic.json]")
+# 2026-05-22: added --run-uuid for Data Conductor job UUID7 linkage
+@click.option("--run-uuid", "RUN_UUID", default=None,
+              help="Data Conductor job UUID7; written to run.run_uuid in phic.json (null if omitted)")
+def msd(NAME, WRITE_JSON, JSON_PATH, RUN_UUID):
+    started_at = _now_iso()
+    t0 = time.monotonic()
+    if WRITE_JSON:
+        _runtime_json = _gather_runtime()
     # -------------------------------------------------------------------------
     DIR_OPT = NAME + "/data_optimization"
     FILE_READ_K = DIR_OPT + "/K_optimized.npz"
     FILE_READ_META = NAME + "/_meta_data/_removed_segments.txt"
     DIR = NAME + "/data_MSD"
+    FILE_OUT_MSD = DIR + "/MSD_matrix.npz"
     os.makedirs(DIR, exist_ok=True)
     # -------------------------------------------------------------------------
     K, N = read_K(FILE_READ_K)
@@ -842,10 +1366,25 @@ def msd(NAME, UPPER, LOWER):
     lam, Q = np.linalg.eigh(L)
     lam1 = lam[1:]
     Q1   = Q[:, 1:]
-    # W[n,p] = 2 * Q[n,p]^2 / lam[p]  -> (N, N-1)
-    W = 2.0 * (Q1 ** 2) / lam1
-    # F[p,m] = 1 - exp(-3 * lam[p] * t[m])  -> (N-1, M+1)
-    F = 1.0 - np.exp(-3.0 * lam1[:, None] * t[None, :])
+    # Each non-trivial mode has relaxation time tau_p = 1 / (3 * lam_p);
+    # set [LOWER, UPPER] to the integer log10 endpoints covering all modes.
+    # UPPER uses 3 * tau_max so the window reaches the equilibrium plateau.
+    tau1 = 1.0 / (3.0 * lam1)
+    # tau[0]=NaN for the center-of-mass mode; tau[p] corresponds to mode p (p=1..N-1)
+    tau = np.concatenate(([np.nan], tau1))
+    tau_min = tau1.min()
+    tau_max = tau1.max()
+    LOWER = int(np.floor(np.log10(tau_min)))
+    UPPER = int(np.ceil(np.log10(3.0 * tau_max)))
+    click.echo(f"Relaxation times: tau_min={tau_min:.3e}, tau_max={tau_max:.3e}")
+    click.echo(f"Auto time range from eigenvalues: LOWER={LOWER}, UPPER={UPPER}")
+    M = POINTS_PER_DECADE * (UPPER - LOWER)
+    exponents = LOWER + np.arange(M + 1) / POINTS_PER_DECADE
+    t = 10.0 ** exponents
+    # W[n,p] = 6 * Q[n,p]^2 * tau[p]  -> (N, N-1)  (mode-p amplitude weight on bead n)
+    W = 6.0 * (Q1 ** 2) * tau1
+    # F[p,m] = 1 - exp(-t[m] / tau[p])  -> (N-1, M+1)  (mode-p relaxation)
+    F = 1.0 - np.exp(-t[None, :] / tau1[:, None])
     # MSD[m,n] = sum_p W[n,p] * F[p,m]  -> (M+1, N)
     MSD = (W @ F).T
     # -------------------------------------------------------------------------
@@ -855,7 +1394,35 @@ def msd(NAME, UPPER, LOWER):
         for idx in nan_indices:
             MSD = np.insert(MSD, idx, np.full(M + 1, np.nan), axis=1)
     # -------------------------------------------------------------------------
-    np.savez_compressed(DIR + "/MSD_matrix.npz", MSD=MSD, t=t)
+    np.savez_compressed(FILE_OUT_MSD, MSD=MSD, t=t, tau=tau)
+    # -------------------------------------------------------------------------
+    if WRITE_JSON:
+        try:
+            elapsed_sec = round(time.monotonic() - t0, 3)
+            completed_at = _now_iso()
+            _phic_data_json = _load_or_init_phic_json(JSON_PATH)
+            _profile_id_json = _upsert_runtime_profile(_phic_data_json, _runtime_json)
+            _run_json = _get_or_init_run(_phic_data_json, NAME, NAME + "/", run_uuid=RUN_UUID)
+            _run_json["msd"] = {
+                "status": "completed",
+                "started_at": started_at,
+                "completed_at": completed_at,
+                "elapsed_sec": elapsed_sec,
+                "runtime_profile_id": _profile_id_json,
+                "parameters": {
+                    "upper": UPPER,
+                    "lower": LOWER,
+                },
+                "files": {
+                    "MSD_matrix": FILE_OUT_MSD,
+                },
+            }
+            _run_json["updated_at"] = completed_at
+            _phic_data_json["updated_at"] = completed_at
+            _atomic_write_json(JSON_PATH, _phic_data_json)
+            click.echo(f"Written msd block to {JSON_PATH}")
+        except Exception as _e:
+            click.echo(f"Warning: could not write msd block to {JSON_PATH}: {_e}", err=True)
 # -----------------------------------------------------------------------------
 
 @cli.command()
@@ -937,38 +1504,53 @@ def plot_msd(NAME, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_LOG, ASPECT):
 @cli.command()
 @click.option("--name", "NAME", required=True,
               help="Target directory name")
-@click.option("--upper", "UPPER", type=int, default=1,
-              help="Upper value of the exponent of the angular frequency  [default=1]")
-@click.option("--lower", "LOWER", type=int, default=-5,
-              help="Lower value of the exponent of the angular frequency  [default=-5]")
-def losstangent(NAME, UPPER, LOWER):
-    M = POINTS_PER_DECADE * (UPPER - LOWER)
-    exponents = LOWER + np.arange(M + 1) / POINTS_PER_DECADE
-    omega = 10.0 ** exponents
+# 2026-05-22: added --json and --json-path for phic.json output
+@click.option("--json", "WRITE_JSON", is_flag=True, default=False,
+              help="Write losstangent block to phic.json in the workspace")
+@click.option("--json-path", "JSON_PATH", default="phic.json",
+              help="Path to phic.json  [default: ./phic.json]")
+# 2026-05-22: added --run-uuid for Data Conductor job UUID7 linkage
+@click.option("--run-uuid", "RUN_UUID", default=None,
+              help="Data Conductor job UUID7; written to run.run_uuid in phic.json (null if omitted)")
+def losstangent(NAME, WRITE_JSON, JSON_PATH, RUN_UUID):
+    started_at = _now_iso()
+    t0 = time.monotonic()
+    if WRITE_JSON:
+        _runtime_json = _gather_runtime()
     # -------------------------------------------------------------------------
     DIR_OPT = NAME + "/data_optimization"
     FILE_READ_K = DIR_OPT + "/K_optimized.npz"
     FILE_READ_META = NAME + "/_meta_data/_removed_segments.txt"
     DIR = NAME + "/data_losstangent"
+    FILE_OUT_LT = DIR + "/losstangent_matrix.npz"
     os.makedirs(DIR, exist_ok=True)
     # -------------------------------------------------------------------------
     K, N = read_K(FILE_READ_K)
     L = transform_K_into_L(K)
     lam, Q = np.linalg.eigh(L)
-    lam[0] = 0
-    omega_1 = 6 * np.pi * lam[1]
-    with open("{0:s}/data_normalized_omega1.txt".format(DIR), "w") as fp:
-        print("ω1 = %e" % omega_1, file=fp)
-        print("log10(ω1) = %f" % (np.log10(omega_1)), file=fp)
-    # -------------------------------------------------------------------------
     lam1 = lam[1:]
     Q1   = Q[:, 1:]
     Qsq  = Q1 ** 2
-    # denom[p,m] = omega[m]^2 + 9*lam[p]^2  -> (N-1, M+1)
-    denom = omega[None, :] ** 2 + 9.0 * (lam1[:, None] ** 2)
-    # Jp[m,n], Jpp[m,n] -> (M+1, N)
-    Jp  = (Qsq @ (3.0 * lam1[:, None] / denom)).T
-    Jpp = (Qsq @ (omega[None, :] / denom)).T
+    # tau_p = 1 / (3 * lam_p); the omega window is the inverse range.
+    # LOWER uses 1/(3*tau_max) so the low-frequency tail captures equilibration.
+    tau1 = 1.0 / (3.0 * lam1)
+    tau = np.concatenate(([np.nan], tau1))
+    tau_min = tau1.min()
+    tau_max = tau1.max()
+    LOWER = int(np.floor(np.log10(1.0 / (3.0 * tau_max))))
+    UPPER = int(np.ceil(np.log10(1.0 / tau_min)))
+    click.echo(f"Relaxation times: tau_min={tau_min:.3e}, tau_max={tau_max:.3e}")
+    click.echo(f"Auto omega range from eigenvalues: LOWER={LOWER}, UPPER={UPPER}")
+    M = POINTS_PER_DECADE * (UPPER - LOWER)
+    exponents = LOWER + np.arange(M + 1) / POINTS_PER_DECADE
+    omega = 10.0 ** exponents
+    # J(omega, n) = sum_p Q[n,p]^2 * tau[p] / (1 + i * omega * tau[p])
+    #   Jp  = Re(J) = sum_p Q^2 * tau / (1 + (omega*tau)^2)
+    #   Jpp = Im(J) = sum_p Q^2 * tau * (omega*tau) / (1 + (omega*tau)^2)
+    x = tau1[:, None] * omega[None, :]                # (N-1, M+1)
+    kernel = tau1[:, None] / (1.0 + x ** 2)           # tau / (1 + (omega*tau)^2)
+    Jp  = (Qsq @ kernel).T                            # (M+1, N)
+    Jpp = (Qsq @ (kernel * x)).T                      # (M+1, N)
     tan_delta = Jpp / Jp
     # -------------------------------------------------------------------------
     df_meta = pd.read_csv(FILE_READ_META, usecols=[0])
@@ -977,7 +1559,35 @@ def losstangent(NAME, UPPER, LOWER):
         for idx in nan_indices:
             tan_delta = np.insert(tan_delta, idx, np.full(M + 1, np.nan), axis=1)
     # -------------------------------------------------------------------------
-    np.savez_compressed(DIR + "/losstangent_matrix.npz", losstangent=tan_delta, omega=omega)
+    np.savez_compressed(FILE_OUT_LT, losstangent=tan_delta, omega=omega, tau=tau)
+    # -------------------------------------------------------------------------
+    if WRITE_JSON:
+        try:
+            elapsed_sec = round(time.monotonic() - t0, 3)
+            completed_at = _now_iso()
+            _phic_data_json = _load_or_init_phic_json(JSON_PATH)
+            _profile_id_json = _upsert_runtime_profile(_phic_data_json, _runtime_json)
+            _run_json = _get_or_init_run(_phic_data_json, NAME, NAME + "/", run_uuid=RUN_UUID)
+            _run_json["losstangent"] = {
+                "status": "completed",
+                "started_at": started_at,
+                "completed_at": completed_at,
+                "elapsed_sec": elapsed_sec,
+                "runtime_profile_id": _profile_id_json,
+                "parameters": {
+                    "upper": UPPER,
+                    "lower": LOWER,
+                },
+                "files": {
+                    "losstangent_matrix": FILE_OUT_LT,
+                },
+            }
+            _run_json["updated_at"] = completed_at
+            _phic_data_json["updated_at"] = completed_at
+            _atomic_write_json(JSON_PATH, _phic_data_json)
+            click.echo(f"Written losstangent block to {JSON_PATH}")
+        except Exception as _e:
+            click.echo(f"Warning: could not write losstangent block to {JSON_PATH}: {_e}", err=True)
 # -----------------------------------------------------------------------------
 
 @cli.command()
