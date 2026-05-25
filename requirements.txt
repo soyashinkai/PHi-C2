@@ -8,3 +8,5 @@ cooler
 h5py
 MDAnalysis
 tqdm
+psutil
+hictkpy

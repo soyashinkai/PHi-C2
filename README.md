@@ -20,7 +20,7 @@ Without preparing a Python environment, PHi-C2 (=<2.0.13) runs on [Google Colab]
 
 ### Requirements
 - PHi-C2 is based on `python3`.
-- Python packages `numpy`, `matplotlib`, `scipy`, `click`, `pandas`, `hic-straw`, `cooler`, `h5py`, `MDAnalysis`, `tqdm`.
+- Python packages `numpy`, `matplotlib`, `scipy`, `click`, `pandas`, `hic-straw`, `cooler`, `h5py`, `MDAnalysis`, `tqdm`, `psutil`, `hictkpy`.
 
 To visualize the simulated polymer dynamics and conformations, [VMD](https://www.ks.uiuc.edu/Research/vmd/) is needed.
 
@@ -78,6 +78,8 @@ The demo uses Hi-C data of mouse embryonic stem cells (chr2: 40–65 Mb, 25-kb r
           └──> losstangent
                └──> plot-losstangent
 
+As of version 2.2.1, most subcommands accept experimental `--json` / `--json-path` / `--run-uuid` options that append a structured analysis log to `phic.json` in the workspace. These options are provided for internal pipeline integration; the schema and detailed usage will be documented in a future release.
+
 #### 0. fetch-fileinfo
 
     phic fetch-fileinfo [OPTIONS]
@@ -125,6 +127,13 @@ The outputs are as follows:
     ├── P_normalized.svg
     └── _meta_data/
 
+The two `.npz` files can be loaded with `numpy.load` using the keys below:
+
+| File | Key | Shape | Description |
+|---|---|---|---|
+| `C_normalized.npz` | `C_normalized` | `(N, N)` | Normalized contact matrix (diagonal = 1; NaN-marked rows/columns are preserved) |
+| `P_normalized.npz` | `P_normalized` | `(N, 2)` | Column 0: genomic distance [bp]; column 1: averaged normalized contact probability |
+
 Example:
 
     phic preprocessing --input FILENAME.hic --res 25000 --plt-max-c 0.05 --chr 2 --grs 40000000 --gre 65000000 --norm KR --tolerance 0.4
@@ -151,6 +160,12 @@ The outputs are the followings:
     └── data_optimization/
         ├── K_optimized.npz
         └── optimization.log
+
+`K_optimized.npz` stores the optimized interaction matrix and can be loaded with `numpy.load` using the key below:
+
+| File | Key | Shape | Description |
+|---|---|---|---|
+| `K_optimized.npz` | `K_optimized` | `(N, N)` | Optimized polymer network interaction matrix |
 
 Example:
 
@@ -180,6 +195,12 @@ The outputs are the followings:
         ├── Eta.svg
         ├── K.svg
         └── P.svg
+
+`C_optimized.npz` can be loaded with `numpy.load` using the key below:
+
+| File | Key | Shape | Description |
+|---|---|---|---|
+| `C_optimized.npz` | `C_optimized` | `(N, N)` | Contact matrix reconstructed from the optimized `K` (NaN positions of `C_normalized` are preserved) |
 
 Example:
 
@@ -241,15 +262,23 @@ Example:
 
     Options:
       --name  TEXT     Target directory name  [required]
-      --upper INTEGER  Upper value of the exponent of the normalized time  [default=5]
-      --lower INTEGER  Lower value of the exponent of the normalized time  [default=-1]
       --help           Show this message and exit.
+
+As of version 2.2.1, the exponent range of the normalized time is automatically determined from the eigenvalues of the Laplacian matrix induced from the optimized polymer network interaction matrix, so the `--upper` and `--lower` options have been removed.
 
 The output is the following:
 
     NAME/
     └── data_MSD/
         └── MSD_matrix.npz
+
+`MSD_matrix.npz` contains three arrays and can be loaded with `numpy.load` using the keys below:
+
+| File | Key | Shape | Description |
+|---|---|---|---|
+| `MSD_matrix.npz` | `MSD` | `(M+1, N)` | MSD of each bead `n` at each normalized time `t[m]` |
+| | `t` | `(M+1,)` | Normalized time points (log-spaced) |
+| | `tau` | `(N,)` | Relaxation times of the normal modes; `tau[0]` is `NaN` (center-of-mass mode) |
 
 Example:
 
@@ -285,16 +314,23 @@ Example:
 
     Options:
       --name    TEXT      Target directory name  [required]
-      --upper   INTEGER   Upper value of the exponent of the angular frequency  [default=1]
-      --lower   INTEGER   Lower value of the exponent of the angular frequency  [default=-5]
       --help              Show this message and exit.
 
-The outputs are the followings:
+As of version 2.2.1, the exponent range of the angular frequency is automatically determined from the eigenvalues of the Laplacian matrix induced from the optimized polymer network interaction matrix, so the `--upper` and `--lower` options have been removed.
+
+The output is the following:
 
     NAME/
     └── data_losstangent/
-        ├── data_normalized_omega1.txt
         └── losstangent_matrix.npz
+
+`losstangent_matrix.npz` contains three arrays and can be loaded with `numpy.load` using the keys below:
+
+| File | Key | Shape | Description |
+|---|---|---|---|
+| `losstangent_matrix.npz` | `losstangent` | `(M+1, N)` | Loss tangent tan δ of each bead `n` at each angular frequency `omega[m]` |
+| | `omega` | `(M+1,)` | Normalized angular frequency points (log-spaced) |
+| | `tau` | `(N,)` | Relaxation times of the normal modes; `tau[0]` is `NaN` (center-of-mass mode) |
 
 Example:
 
