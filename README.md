@@ -22,7 +22,7 @@ Without preparing a Python environment, PHi-C2 (=<2.0.13) runs on [Google Colab]
 - PHi-C2 is based on `python3`.
 - Python packages `numpy`, `matplotlib`, `scipy`, `click`, `pandas`, `hic-straw`, `cooler`, `h5py`, `MDAnalysis`, `tqdm`, `psutil`, `hictkpy`.
 
-To visualize the simulated polymer dynamics and conformations, [VMD](https://www.ks.uiuc.edu/Research/vmd/) is needed.
+To visualize the simulated polymer dynamics and conformations, [VMD](https://www.ks.uiuc.edu/Research/vmd/) can be used. Alternatively, the output PSF and DCD files can be viewed directly in a web browser using [Mol*](https://molstar.org/viewer/) without any local installation.
 
 
 ### Citation
