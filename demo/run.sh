@@ -22,7 +22,7 @@ NAME="ES_mapq30_KR_chr${CHR}_${START}-${END}_res${RES}bp"
 phic optimization --name ${NAME}
 
 # Plot the optimized results
-phic plot-optimization --name ${NAME} --res ${RES} --plt-max-c ${PLT_MAX_C} --plt-max-k 0.01
+phic plot-optimization --name ${NAME} --plt-max-c ${PLT_MAX_C} --plt-max-k 0.01
 
 # Run the 4D dynamics simulation
 phic dynamics --name ${NAME} --interval 10 --frame 100
