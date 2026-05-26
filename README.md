@@ -171,6 +171,16 @@ As of version 2.2.1, `optimization` also produces `C_optimized.npz` and `P_optim
 | `C_optimized.npz` | `C_optimized` | `(N, N)` | Contact matrix reconstructed from the optimized `K` (NaN positions of `C_normalized` are preserved) |
 | `P_optimized.npz` | `P_optimized` | `(N, 2)` | Column 0: genomic distance [bp]; column 1: averaged contact probability from `C_optimized` |
 
+`optimization.log` is a tab-separated text file that records the per-iteration trajectory of the optimization. It has a header row followed by one row per accepted step:
+
+| Column | Description |
+|---|---|
+| `step` | Iteration index (0 = initial state before any update) |
+| `cost` | Frobenius norm of the difference between the reconstructed contact matrix and `C_normalized` divided by `N`; equivalent to the root-mean-square deviation (RMSD) per matrix element |
+| `eta` | Learning rate accepted at this step (adjusted by backtracking) |
+
+It is consumed by `plot-optimization` to render `Cost.svg` and `Eta.svg`, and can also be loaded directly with `numpy.loadtxt(path, delimiter="\t", skiprows=1)` for custom analysis.
+
 Example:
 
     phic optimization --name NAME
