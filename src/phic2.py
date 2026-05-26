@@ -411,14 +411,15 @@ def _empty_phic_json():
     #     "runtime_profiles": {},
     #     "run": None,
     # }
-    return {
-        "$schema": "./schemas/phic-json-schema_2026-05-25.json",
+    return {  # 2026-05-25: new
+        "$schema": "./schemas/phic-json-schema_2026-05-25.json",  # 2026-05-25: updated schema filename
         "_comment": "PHi-C2 analysis log. See the schema for field descriptions.",
         "phic_version": "2.2.1",
-        "schema_version": "2026-05-25",
+        "schema_version": "2026-05-25",  # 2026-05-25: updated schema version
         "created_at": _now_iso(),
         "updated_at": _now_iso(),
         "hic_file_info": None,
+        # "source_metadata": None,  # 2026-05-25: removed source_metadata block
         "runtime_profiles": {},
         "run": None,
     }
@@ -598,12 +599,13 @@ def _read_hic_fileinfo(file_input):
     }
 # =============================================================================
 
-# def calc_plot_correlations(C_optimized, C_normalized, N, P_optimized, P_normalized, DIR_OPT):  # 2026-05-22: original
-def calc_plot_correlations(C_optimized, C_normalized, N, P_optimized, P_normalized, DIR_OPT, draw_figures=True):  # 2026-05-22: added draw_figures parameter
+# 2026-05-22: renamed from calc_plot_correlations and simplified to pure plotting.
+# r/dcr are recomputed locally for scatter-plot titles; the canonical values
+# written to _correlations.txt and phic.json come from optimization().
+def plot_correlations(C_optimized, C_normalized, N, P_optimized, P_normalized, DIR_OPT):
     r, Optimized, Normalized = calc_correlation(C_optimized, C_normalized, N)
-    dcr, Optimized_dcr, Normalized_dcr = calc_distance_corrected_correlation(C_optimized, C_normalized, N, P_optimized[:, 1], P_normalized[:, 1])
-    if not draw_figures:
-        return r, dcr
+    dcr, Optimized_dcr, Normalized_dcr = calc_distance_corrected_correlation(
+        C_optimized, C_normalized, N, P_optimized[:, 1], P_normalized[:, 1])
     # -------------------------------------------------------------------------
     plt.rcParams["font.family"] = "Arial"
     plt.rcParams["font.size"] = 36
@@ -649,8 +651,6 @@ def calc_plot_correlations(C_optimized, C_normalized, N, P_optimized, P_normaliz
     plt.tight_layout()
     plt.savefig(FILE_FIG_DC_CORRELATION)
     plt.close()
-
-    return r, dcr
 # -----------------------------------------------------------------------------
 
 @click.group()
@@ -912,7 +912,7 @@ def optimization(NAME, init_k_backbone, alpha, beta, gradient_degree, WRITE_JSON
     if WRITE_JSON:
         _runtime_json = _gather_runtime()
     # -------------------------------------------------------------------------
-    write_optimization_meta_data(NAME, init_k_backbone, alpha, beta, gradient_degree, version="2.2.0")
+    write_optimization_meta_data(NAME, init_k_backbone, alpha, beta, gradient_degree, version="2.2.1")
     # -------------------------------------------------------------------------
     FILE_READ = NAME + "/C_normalized.npz"
     DIR_OPT = NAME + "/data_optimization"
@@ -992,6 +992,35 @@ def optimization(NAME, init_k_backbone, alpha, beta, gradient_degree, WRITE_JSON
     # -------------------------------------------------------------------------
     fp.close()
     # -------------------------------------------------------------------------
+    # 2026-05-22: post-optimization outputs (moved from plot-optimization)
+    # Restore cell-level NaN mask from the original C_normalized and save C_optimized.npz
+    # (N_for_phic-sized, matching the C_normalized.npz convention).
+    C_normalized_with_nan, _ = read_normalized_C(FILE_READ)
+    C_optimized = C.copy()
+    C_optimized[np.isnan(C_normalized_with_nan)] = np.nan
+    np.savez_compressed(DIR_OPT + "/C_optimized.npz", C_optimized=C_optimized)
+    # Reinsert removed NaN rows/cols so P_optimized and correlations use the same
+    # genomic coordinate system as P_normalized.npz (N_input-sized).
+    df_meta = pd.read_csv(NAME + "/_meta_data/_removed_segments.txt", usecols=[0])
+    if df_meta.shape[0] > 0:
+        nan_indices = df_meta.iloc[:, 0].tolist()
+        for idx in nan_indices:
+            M = C_normalized_with_nan.shape[0]
+            C_normalized_with_nan = np.insert(np.insert(C_normalized_with_nan, idx, np.full(M, np.nan), axis=0), idx, np.full(M+1, np.nan), axis=1)
+            C_optimized = np.insert(np.insert(C_optimized, idx, np.full(M, np.nan), axis=0), idx, np.full(M+1, np.nan), axis=1)
+    N_full = C_optimized.shape[0]
+    # Save P_optimized.npz (N_input-sized, matching P_normalized.npz convention).
+    P_normalized = np.load(NAME + "/P_normalized.npz")["P_normalized"]
+    RES = int(P_normalized[1, 0])
+    P_optimized = calc_Ps(C_optimized, RES)
+    np.savez_compressed(DIR_OPT + "/P_optimized.npz", P_optimized=P_optimized)
+    # Correlations between C_optimized and C_normalized in the full coordinate system.
+    r, _, _ = calc_correlation(C_optimized, C_normalized_with_nan, N_full)
+    dcr, _, _ = calc_distance_corrected_correlation(
+        C_optimized, C_normalized_with_nan, N_full,
+        P_optimized[:, 1], P_normalized[:, 1])
+    write_correlations_meta_data(NAME, r, dcr)
+    # -------------------------------------------------------------------------
     # 2026-05-22: write completed optimization block to phic.json
     if WRITE_JSON:
         try:
@@ -1006,17 +1035,6 @@ def optimization(NAME, init_k_backbone, alpha, beta, gradient_degree, WRITE_JSON
                 "max": float(np.nanmax(K)),
                 "mean": float(np.nanmean(K)),
             }
-            # correlations between C_optimized and C_normalized
-            C_normalized_corr, N_corr = read_normalized_C(FILE_READ)  # fresh load with NaN preserved
-            C_optimized_corr, _ = convert_K_into_C(K, J_over_N, I_N)
-            P_normalized_corr = np.load(NAME + "/P_normalized.npz")["P_normalized"]
-            # infer resolution from saved P_normalized (P[:,0] = RES * arange(N))
-            RES_corr = int(P_normalized_corr[1, 0])
-            P_optimized_corr = calc_Ps(C_optimized_corr, RES_corr)
-            r_corr, _, _ = calc_correlation(C_optimized_corr, C_normalized_corr, N_corr)
-            dcr_corr, _, _ = calc_distance_corrected_correlation(
-                C_optimized_corr, C_normalized_corr, N_corr,
-                P_optimized_corr[:, 1], P_normalized_corr[:, 1])
             _phic_data_json = _load_or_init_phic_json(JSON_PATH)
             _profile_id_json = _upsert_runtime_profile(_phic_data_json, _runtime_json)
             _run_json = _get_or_init_run(_phic_data_json, NAME, NAME + "/", run_uuid=RUN_UUID)
@@ -1038,13 +1056,15 @@ def optimization(NAME, init_k_backbone, alpha, beta, gradient_degree, WRITE_JSON
                 "converged": True,
                 "K_stats": k_stats,
                 "correlation": {
-                    "pearson": round(float(r_corr), 6),
+                    "pearson": round(float(r), 6),
                 },
                 "correlation_distance_corrected": {
-                    "pearson": round(float(dcr_corr), 6),
+                    "pearson": round(float(dcr), 6),
                 },
                 "files": {
                     "K_optimized": DIR_OPT + "/K_optimized.npz",
+                    "C_optimized": DIR_OPT + "/C_optimized.npz",
+                    "P_optimized": DIR_OPT + "/P_optimized.npz",
                     "log": FILE_LOG,
                 },
             }
@@ -1059,8 +1079,6 @@ def optimization(NAME, init_k_backbone, alpha, beta, gradient_degree, WRITE_JSON
 @cli.command()
 @click.option("--name", "NAME", required=True,
               help="Target directory name")
-@click.option("--res", "RES", type=int, required=True,
-              help="Resolution of the bin size")
 @click.option("--plt-max-c", "PLT_MAX_C", type=float, required=True,
               help="Maximum value of contact map")
 @click.option("--plt-max-k", "PLT_MAX_K", type=float, required=True,
@@ -1076,7 +1094,8 @@ def optimization(NAME, init_k_backbone, alpha, beta, gradient_degree, WRITE_JSON
 @click.option("--run-uuid", "RUN_UUID", default=None,
               help="Data Conductor job UUID7; written to run.run_uuid in phic.json (null if omitted)")
 # def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K):  # 2026-05-22: original
-def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K, WRITE_JSON, JSON_PATH, NO_FIGURES, RUN_UUID):  # 2026-05-22: added WRITE_JSON, JSON_PATH, NO_FIGURES, RUN_UUID
+# 2026-05-22: --res removed (no longer used; RES is encoded in saved P_*.npz files).
+def plot_optimization(NAME, PLT_MAX_C, PLT_MAX_K, WRITE_JSON, JSON_PATH, NO_FIGURES, RUN_UUID):
     # 2026-05-22: capture start time before any computation
     started_at = _now_iso()
     t0 = time.monotonic()
@@ -1086,9 +1105,12 @@ def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K, WRITE_JSON, JSON_PATH, NO
     DIR_OPT = NAME + "/data_optimization"
     FILE_READ_C = NAME + "/C_normalized.npz"
     FILE_READ_K = DIR_OPT + "/K_optimized.npz"
+    FILE_READ_C_OPT = DIR_OPT + "/C_optimized.npz"
+    FILE_READ_P_NORM = NAME + "/P_normalized.npz"
+    FILE_READ_P_OPT = DIR_OPT + "/P_optimized.npz"
     FILE_READ_LOG = DIR_OPT + "/optimization.log"
-    FILE_OUT_C_OPT = DIR_OPT + "/C_optimized.npz"
     FILE_READ_META = NAME + "/_meta_data/_removed_segments.txt"
+    FILE_READ_CORR = NAME + "/_meta_data/_correlations.txt"
     FILE_FIG_C = DIR_OPT + "/C.svg"
     FILE_FIG_K = DIR_OPT + "/K.svg"
     FILE_FIG_P = DIR_OPT + "/P.svg"
@@ -1103,14 +1125,16 @@ def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K, WRITE_JSON, JSON_PATH, NO
         cmap_for_K = plt.get_cmap("bwr")
         cmap_for_K.set_bad(color=(0.8, 0.8, 0.8))
     # -------------------------------------------------------------------------
+    # 2026-05-22: load pre-computed arrays from optimization (no recomputation here).
     C_normalized, N = read_normalized_C(FILE_READ_C)
     K = np.load(FILE_READ_K)["K_optimized"]
-    J_over_N = np.full((N, N), 1.0 / N)
-    I_N = np.eye(N)
-    C_optimized, _ = convert_K_into_C(K, J_over_N, I_N)
-    mask_nan = np.isnan(C_normalized)
-    C_optimized[mask_nan] = np.nan
-    np.savez_compressed(FILE_OUT_C_OPT, C_optimized=C_optimized)
+    C_optimized = np.load(FILE_READ_C_OPT)["C_optimized"]
+    P_normalized = np.load(FILE_READ_P_NORM)["P_normalized"]
+    P_optimized = np.load(FILE_READ_P_OPT)["P_optimized"]
+    # r/dcr written by optimization to _meta_data/_correlations.txt (CSV: name,value).
+    _df_corr = pd.read_csv(FILE_READ_CORR, header=None)
+    r = float(_df_corr.iloc[0, 1])
+    dcr = float(_df_corr.iloc[1, 1])
     # -------------------------------------------------------------------------
     df_meta = pd.read_csv(FILE_READ_META, usecols=[0])
     if df_meta.shape[0] > 0:
@@ -1125,13 +1149,9 @@ def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K, WRITE_JSON, JSON_PATH, NO
     C = np.zeros((N, N))
     C[np.triu_indices(N, k=0)] = C_normalized[np.triu_indices(N, k=0)]
     C[np.tril_indices(N, k=-1)] = C_optimized[np.tril_indices(N, k=-1)]
-
-    P_normalized = calc_Ps(C_normalized, RES)
-    P_optimized = calc_Ps(C_optimized, RES)
     # -------------------------------------------------------------------------
-    r, dcr = calc_plot_correlations(C_optimized, C_normalized, N, P_optimized, P_normalized, DIR_OPT, draw_figures=not NO_FIGURES)
-    write_correlations_meta_data(NAME, r, dcr)
     if not NO_FIGURES:
+        plot_correlations(C_optimized, C_normalized, N, P_optimized, P_normalized, DIR_OPT)
         # -------------------------------------------------------------------------
         plt.figure(figsize=(10, 10))
         plt.text(N - 1, 0, "Hi-C", fontweight="bold", ha="right", va="top")
@@ -1221,16 +1241,10 @@ def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K, WRITE_JSON, JSON_PATH, NO
                 "elapsed_sec": elapsed_sec,
                 "runtime_profile_id": _profile_id_json,
                 "parameters": {
-                    "res": RES,
                     "plt_max_c": PLT_MAX_C,
                     "plt_max_k": PLT_MAX_K,
                 },
-                "correlations": {
-                    "pearson_r": round(float(r), 16),
-                    "pearson_r_distance_corrected": round(float(dcr), 16),
-                },
                 "files": {
-                    "C_optimized": FILE_OUT_C_OPT,
                     **({"figures": {
                         "C":    FILE_FIG_C,
                         "P":    FILE_FIG_P,
