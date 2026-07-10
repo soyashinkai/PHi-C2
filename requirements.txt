@@ -3,9 +3,6 @@ matplotlib
 scipy
 click
 pandas
-hic-straw
-cooler
-h5py
 MDAnalysis
 tqdm
 psutil

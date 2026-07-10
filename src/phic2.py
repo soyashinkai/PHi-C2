@@ -6,11 +6,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import pearsonr
 import click
 # for version >= 2.1.0
-import hicstraw
 import pandas as pd
-# for version >= 2.1.1
-import cooler
-import h5py
 # for version >= 2.2.0
 import MDAnalysis as mda
 from MDAnalysis.coordinates.DCD import DCDWriter
@@ -28,8 +24,8 @@ import tempfile
 import re
 from datetime import datetime, timezone
 from importlib.metadata import version as _pkg_version
-import psutil  # 2026-05-22: hardware info for runtime_profiles in phic.json
-import hictkpy # 2026-05-22: .hic/.mcool metadata for hic_file_info in phic.json
+import psutil  # 2026-05-22: hardware info for runtime_profiles in phic-metadata.json
+import hictkpy # 2026-05-22: .hic/.mcool metadata for hic_file_info in phic-metadata.json
 # -----------------------------------------------------------------------------
 POINTS_PER_DECADE = 100
 # -----------------------------------------------------------------------------
@@ -227,65 +223,33 @@ def write_psfdata(psf_path, NAME, N):
         print("\n", end="", file=fp)
 # -----------------------------------------------------------------------------
 
-# Supports both .hic and .mcool files.
+# Supports both .hic and .mcool files via hictkpy.
 # def make_input_contact_matrix(FILE_INPUT, RES, CHR, START, END, NORM):  # 2026-05-22: original
-def make_input_contact_matrix(FILE_INPUT, RES, CHR, START, END, NORM, output_dir=None):  # 2026-05-22: added output_dir
+def make_input_contact_matrix(FILE_INPUT, RES, CHR, START, END, NORM, output_dir=None):  # 2026-07-03: migrated to hictkpy
     NAME, EXT = os.path.splitext(os.path.basename(FILE_INPUT))
+    ext = EXT.lower()
 
-    if EXT == ".hic": # for version >= 2.1.0
-        if not (isinstance(START, int) and isinstance(END, int)): # for the whole single chromosome
-            # Set START and END for the target chromosome ID
-            hic = hicstraw.HiCFile(FILE_INPUT)
-            START = int(0)
-            for chrom in hic.getChromosomes():
-                if chrom.name == CHR:
-                    END = chrom.length
-                    break
-            # Set an input raw contact matrix with nan-values
-            N_input = int(END / RES) + 1
-            C_input = np.full((N_input, N_input), np.nan)
-            result = hicstraw.straw("observed", NORM, FILE_INPUT, CHR, CHR, "BP", RES)
-            for k in range(len(result)):
-                l = int((result[k].binX - START) / RES)
-                m = int((result[k].binY - START) / RES)
-                C_input[l, m] = C_input[m, l] = result[k].counts
-            # Set the name of the working directory
-            DIR = f"{NAME}_{NORM}_chr{CHR}_res{RES}bp"
-        else:
-            # Set an input raw contact matrix with nan-values
-            N_input = int((END - START) / RES)
-            C_input = np.full((N_input, N_input), np.nan)
-            ROI = f"{CHR}:{START}:{END - RES}"
-            result = hicstraw.straw("observed", NORM, FILE_INPUT, ROI, ROI, "BP", RES)
-            for k in range(len(result)):
-                l = int((result[k].binX - START) / RES)
-                m = int((result[k].binY - START) / RES)
-                C_input[l, m] = C_input[m, l] = result[k].counts
-            # Set the name of the working directory
-            DIR = f"{NAME}_{NORM}_chr{CHR}_{START}-{END}_res{RES}bp"
-    elif EXT == ".mcool": # for mcool files # for version >= 2.1.1
-        if not (isinstance(START, int) and isinstance(END, int)):  # for the whole single chromosome
-            hic = cooler.Cooler(f"{FILE_INPUT}::resolutions/{RES}")
-            START = int(0)
-            for chrom in hic.chromnames:
-                if chrom == CHR:
-                    END = hic.chromsizes[chrom]
-                    break
-            coo = hic.matrix(balance=NORM, sparse=True).fetch(f"{CHR}") # sparse=True. Returns scipy.sparse.coo_matrix.
-            C_input = np.full(coo.shape, np.nan)
-            C_input[coo.row, coo.col] = coo.data
-            # Set the name of the working directory
-            DIR = f"{NAME}_{NORM}_{CHR}_res{RES}bp"
-        else:
-            hic = cooler.Cooler(f"{FILE_INPUT}::resolutions/{RES}")
-            coo = hic.matrix(balance=NORM, sparse=True).fetch(f"{CHR}:{START}-{END}") # sparse=True. Returns scipy.sparse.coo_matrix.
-            C_input = np.full(coo.shape, np.nan)
-            C_input[coo.row, coo.col] = coo.data
-            # Set the name of the working directory
-            DIR = f"{NAME}_{NORM}_{CHR}_{START}-{END}_res{RES}bp"
-        N_input = C_input.shape[0]
-    else: # for version <= 2.0.13
+    if ext not in (".hic", ".mcool"): # for version <= 2.0.13
         raise click.UsageError("Version 2.1.0 and above no longer support input in formats other than .hic or .mcool.")
+
+    f = hictkpy.File(FILE_INPUT, RES)
+    chroms = f.chromosomes()
+    if CHR not in chroms:
+        raise click.UsageError(f"Chromosome '{CHR}' not found in {FILE_INPUT}.")
+
+    CHR_LABEL = CHR if CHR.lower().startswith("chr") else f"chr{CHR}"
+
+    if not (isinstance(START, int) and isinstance(END, int)): # for the whole single chromosome
+        START = int(0)
+        END = int(chroms[CHR])
+        C_input = f.fetch(CHR, normalization=NORM).to_numpy().astype(float)
+        N_input = C_input.shape[0]
+        DIR = f"{NAME}_{NORM}_{CHR_LABEL}_res{RES}bp"
+    else:
+        ROI = f"{CHR}:{START}-{END}"
+        C_input = f.fetch(ROI, normalization=NORM).to_numpy().astype(float)
+        N_input = C_input.shape[0]
+        DIR = f"{NAME}_{NORM}_{CHR_LABEL}_{START}-{END}_res{RES}bp"
 
     # 2026-05-22: override auto-computed DIR with canonical output path if provided
     if output_dir is not None:
@@ -308,16 +272,20 @@ def write_meta_data(DIR, FILE_INPUT, NORM, CHR, START, END, RES, N_input, N_for_
     DIR_META = DIR + "/_meta_data"
     os.makedirs(DIR_META, exist_ok=True)
 
-    with open(DIR_META + "/_fetched_data_info.txt", "w") as file:
-        file.write(f"filename,{FILE_INPUT}\n")
-        file.write(f"normalization,{NORM}\n")
-        file.write(f"chromosome ID,{CHR}\n")
-        file.write(f"start genomic position,{START}\n")
-        file.write(f"end genomic position,{END}\n")
-        file.write(f"resolution,{RES}\n")
-        file.write(f"input contact matrix size,{N_input}x{N_input}\n")
-        file.write(f"phic contact matrix size,{N_for_phic}x{N_for_phic}\n")
-        file.write(f"tolerance,{TOLERANCE}\n")
+    # 2026-07-07: dropped _fetched_data_info.txt — redundant with phic.json (its values live in
+    #             the preprocessing block: parameters.{input,norm,chr,res,tolerance},
+    #             start_position/end_position, input_matrix_size, phic_matrix_size). Per Shinkai-san,
+    #             _meta_data keeps only _removed_segments.txt and _remaining_segments.txt (below).
+    # with open(DIR_META + "/_fetched_data_info.txt", "w") as file:
+    #     file.write(f"filename,{FILE_INPUT}\n")
+    #     file.write(f"normalization,{NORM}\n")
+    #     file.write(f"chromosome ID,{CHR}\n")
+    #     file.write(f"start genomic position,{START}\n")
+    #     file.write(f"end genomic position,{END}\n")
+    #     file.write(f"resolution,{RES}\n")
+    #     file.write(f"input contact matrix size,{N_input}x{N_input}\n")
+    #     file.write(f"phic contact matrix size,{N_for_phic}x{N_for_phic}\n")
+    #     file.write(f"tolerance,{TOLERANCE}\n")
 
     with open(DIR_META + "/_removed_segments.txt", "w") as file:
         file.write(f"index,chrom,chromStart,chromEnd\n")
@@ -336,25 +304,32 @@ def write_meta_data(DIR, FILE_INPUT, NORM, CHR, START, END, RES, N_input, N_for_
             file.write(f"{valid_indices[i]},{CHR},{grs},{gre},{i}\n")
 # -----------------------------------------------------------------------------
 
-def write_optimization_meta_data(DIR, init_k_backbone, alpha, beta, gradient_degree, version):
-    DIR_META = DIR + "/_meta_data"
-    os.makedirs(DIR_META, exist_ok=True)
-
-    with open(DIR_META + "/_optimization_hyper_parameters.txt", "w") as file:
-        file.write(f"PHi-C version,{version}\n")
-        file.write(f"initial K along backbone,{init_k_backbone}\n")
-        file.write(f"gradient degree,{gradient_degree}\n")
-        file.write(f"stop condition parameter,{alpha:.2e}\n")
-        file.write(f"backtracking factor,{beta:.2e}\n")
+# 2026-07-07: dropped _optimization_hyper_parameters.txt — redundant with phic.json
+#             (optimization block: hyperparameters.{initial_k_backbone,gradient_degree,
+#             stop_condition,backtracking_factor} + runtime_profiles.*.phic_version). Function and
+#             its call site removed per Shinkai-san's _meta_data cleanup.
+# def write_optimization_meta_data(DIR, init_k_backbone, alpha, beta, gradient_degree, version):
+#     DIR_META = DIR + "/_meta_data"
+#     os.makedirs(DIR_META, exist_ok=True)
+#
+#     with open(DIR_META + "/_optimization_hyper_parameters.txt", "w") as file:
+#         file.write(f"PHi-C version,{version}\n")
+#         file.write(f"initial K along backbone,{init_k_backbone}\n")
+#         file.write(f"gradient degree,{gradient_degree}\n")
+#         file.write(f"stop condition parameter,{alpha:.2e}\n")
+#         file.write(f"backtracking factor,{beta:.2e}\n")
 # -----------------------------------------------------------------------------
 
-def write_correlations_meta_data(DIR, r, dcr):
-    DIR_META = DIR + "/_meta_data"
-    os.makedirs(DIR_META, exist_ok=True)
-
-    with open(DIR_META + "/_correlations.txt", "w") as file:
-        file.write(f"Pearson correlation coefficient,{r}\n")
-        file.write(f"distance-corrected Pearson correlation coefficient,{dcr}\n")
+# 2026-07-07: dropped _correlations.txt — redundant with phic.json (optimization block:
+#             correlation.pearson + correlation_distance_corrected.pearson). Function and its
+#             call site removed; plot_optimization now reads r/dcr from phic.json instead.
+# def write_correlations_meta_data(DIR, r, dcr):
+#     DIR_META = DIR + "/_meta_data"
+#     os.makedirs(DIR_META, exist_ok=True)
+#
+#     with open(DIR_META + "/_correlations.txt", "w") as file:
+#         file.write(f"Pearson correlation coefficient,{r}\n")
+#         file.write(f"distance-corrected Pearson correlation coefficient,{dcr}\n")
 # -----------------------------------------------------------------------------
 
 # =============================================================================
@@ -363,7 +338,7 @@ def write_correlations_meta_data(DIR, r, dcr):
 
 # Key packages to record in runtime_profiles.environment.packages
 _JSON_KEY_PACKAGES = [
-    "click", "cooler", "h5py", "hic-straw", "hictkpy",
+    "click", "hictkpy",
     "matplotlib", "MDAnalysis", "numpy", "pandas",
     "psutil", "scipy", "tqdm",
 ]
@@ -373,12 +348,31 @@ def _now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+# 2026-07-03: re-graft DC refinement — collapse numeric arrays onto one line for
+# readable phic.json (Bucket-2; grafted for CPU/GPU parity, matches GPU 2.3.0).
+def _compact_number_arrays(s):
+    """Collapse JSON arrays of only numbers onto a single line."""
+    import re
+    def collapse(m):
+        nums = [n.strip() for n in m.group(1).split(',') if n.strip()]
+        return '[' + ', '.join(nums) + ']'
+    return re.sub(
+        r'\[(\s*(?:-?[\d.]+(?:[eE][+-]?\d+)?)(?:\s*,\s*(?:-?[\d.]+(?:[eE][+-]?\d+)?))*\s*)\]',
+        collapse, s, flags=re.DOTALL,
+    )
+
+
 def _atomic_write_json(path, data):
     dir_ = os.path.dirname(os.path.abspath(path)) or "."
+    os.makedirs(dir_, exist_ok=True)  # 2026-07-03: re-graft DC refinement (ensure output dir exists)
     fd, tmp = tempfile.mkstemp(prefix=".phic.", suffix=".json.tmp", dir=dir_)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+            # 2026-07-03: re-graft DC refinement — compact numeric arrays before writing
+            # json.dump(data, f, indent=2, ensure_ascii=False)  # 2026-07-03: replaced (was plain dump)
+            text = json.dumps(data, indent=2, ensure_ascii=False)
+            text = _compact_number_arrays(text)
+            f.write(text)
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, path)
@@ -402,7 +396,7 @@ def _empty_phic_json():
     # return {  # 2026-05-22: original
     #     "$schema": "./schemas/phic-json-schema_2026-05-22.json",
     #     "_comment": "PHi-C2 analysis log. See the schema for field descriptions.",
-    #     "phic_version": "2.2.1",
+    #     "phic_version": "2.2.2",
     #     "schema_version": "2026-05-22",
     #     "created_at": _now_iso(),
     #     "updated_at": _now_iso(),
@@ -414,7 +408,7 @@ def _empty_phic_json():
     return {  # 2026-05-25: new
         "$schema": "./schemas/phic-json-schema_2026-05-25.json",  # 2026-05-25: updated schema filename
         "_comment": "PHi-C2 analysis log. See the schema for field descriptions.",
-        "phic_version": "2.2.1",
+        "phic_version": "2.2.2", # 2026-07-03
         "schema_version": "2026-05-25",  # 2026-05-25: updated schema version
         "created_at": _now_iso(),
         "updated_at": _now_iso(),
@@ -533,7 +527,7 @@ def _gather_runtime():
         "memory_gb": round(psutil.virtual_memory().total / (1024 ** 3), 2),
         "gpu": _detect_gpu(),
         "math_libraries": _detect_math_libraries(),
-        "phic_version": "2.2.1",
+        "phic_version": "2.2.2",
         "environment": _detect_environment(),
     }
 
@@ -662,49 +656,44 @@ def cli():
 @click.option("--input", "FILE_INPUT", required=True,
               help="Input Hi-C file (.hic or .mcool format)")
 # 2026-05-22: added --json and --json-path for phic.json output
-@click.option("--json", "WRITE_JSON", is_flag=True, default=False,
-              help="Write hic_file_info block to phic.json in the workspace")
-@click.option("--json-path", "JSON_PATH", default="phic.json",
-              help="Path to phic.json  [default: ./phic.json]")
+# 2026-07-03: phic.json default-on; pass --no-json to disable (was: is_flag default=False)
+# 2026-07-07: fetch-fileinfo is a display-only command (no analysis directory exists yet, so
+#             phic.json would land in the CWD). Per Shinkai-san, drop JSON output here entirely;
+#             the same hic_file_info metadata is still captured later during preprocessing.
+# @click.option("--json", "WRITE_JSON", is_flag=True, default=False,
+# @click.option("--json/--no-json", "WRITE_JSON", default=True,
+#               help="Write hic_file_info block to phic.json in the workspace")
+# @click.option("--json-path", "JSON_PATH", default="phic.json",
+#               help="Path to phic.json  [default: ./phic.json]")
 # def fetch_fileinfo(FILE_INPUT):  # 2026-05-22: original
-def fetch_fileinfo(FILE_INPUT, WRITE_JSON, JSON_PATH):  # 2026-05-22: added WRITE_JSON, JSON_PATH
-    _, EXT = os.path.splitext(FILE_INPUT)
-    if EXT == ".hic":  # for .hic files
-        hic = hicstraw.HiCFile(FILE_INPUT)
-        print("chromosome, length")
-        for chrom in hic.getChromosomes():
-            print(chrom.name, chrom.length)
-        print("------------------------")
-        print("(usually) available normalization methods:", ["NONE", "VC", "VC_SQRT", "KR", "SCALE"])
-        print("-------------------------")
-        print("available resolutions:", hic.getResolutions())
-        print("-------------------------")
-    elif EXT == ".mcool":  # for .mcool files
-        with h5py.File(FILE_INPUT, "r") as f:
-            resolutions = list(f["resolutions"].keys())
-        hic = cooler.Cooler(f'{FILE_INPUT}::resolutions/{resolutions[0]}')
-        print("chromosome, length")
-        for chromname in hic.chromnames:
-            print(chromname, hic.chromsizes[chromname])
-        print("------------------------")
-        print("(usually) available normalization methods:", [None, "weight"])
-        print("-------------------------")
-        print("available resolutions:", resolutions)
-        print("-------------------------")
-    else:
-        raise click.UsageError("Unsupported file format. Use .hic or .mcool.")
+# def fetch_fileinfo(FILE_INPUT, WRITE_JSON, JSON_PATH):  # 2026-05-22: added WRITE_JSON, JSON_PATH
+def fetch_fileinfo(FILE_INPUT):  # 2026-07-07: display-only; WRITE_JSON/JSON_PATH removed
+    fileinfo = _read_hic_fileinfo(FILE_INPUT)
+    print("genome assembly:", fileinfo["genome_assembly"])
+    print("chromosome, length")
+    for chrom in fileinfo["chromosomes"]:
+        print(chrom["name"], chrom["length"])
+    print("------------------------")
+    print("available normalization methods:", fileinfo["normalizations"])
+    print("-------------------------")
+    print("available resolutions:", fileinfo["resolutions"])
+    print("-------------------------")
+
     # 2026-05-22: write hic_file_info block to phic.json when --json is given
-    if WRITE_JSON:
-        phic_data = _load_or_init_phic_json(JSON_PATH)
-        runtime = _gather_runtime()
-        profile_id = _upsert_runtime_profile(phic_data, runtime)
-        fileinfo = _read_hic_fileinfo(FILE_INPUT)
-        fileinfo["fetched_at"] = _now_iso()
-        fileinfo["runtime_profile_id"] = profile_id
-        phic_data["hic_file_info"] = fileinfo
-        phic_data["updated_at"] = _now_iso()
-        _atomic_write_json(JSON_PATH, phic_data)
-        click.echo(f"Written hic_file_info to {JSON_PATH}")
+    # 2026-07-07: removed — fetch-fileinfo is display-only (see option/signature note above).
+    #             No analysis directory exists at this stage, so writing phic.json here would
+    #             drop a stray file into the CWD. Metadata is captured later in preprocessing.
+    # if WRITE_JSON:
+    #     phic_data = _load_or_init_phic_json(JSON_PATH)
+    #     runtime = _gather_runtime()
+    #     profile_id = _upsert_runtime_profile(phic_data, runtime)
+    #     # 2026-07-03: reuse fileinfo already fetched via hictkpy above
+    #     fileinfo["fetched_at"] = _now_iso()
+    #     fileinfo["runtime_profile_id"] = profile_id
+    #     phic_data["hic_file_info"] = fileinfo
+    #     phic_data["updated_at"] = _now_iso()
+    #     _atomic_write_json(JSON_PATH, phic_data)
+    #     click.echo(f"Written hic_file_info to {JSON_PATH}")
 # -----------------------------------------------------------------------------
 
 @cli.command()
@@ -730,13 +719,20 @@ def fetch_fileinfo(FILE_INPUT, WRITE_JSON, JSON_PATH):  # 2026-05-22: added WRIT
 @click.option("--name", "NAME", default=None,
               help="Output directory name (canonical path); if omitted, auto-named by script")
 # 2026-05-22: added --json and --json-path for phic.json output
-@click.option("--json", "WRITE_JSON", is_flag=True, default=False,
-              help="Write preprocessing block to phic.json in the workspace")
-@click.option("--json-path", "JSON_PATH", default="phic.json",
-              help="Path to phic.json  [default: ./phic.json]")
+# 2026-07-03: phic.json default-on; pass --no-json to disable (was: is_flag default=False)
+# @click.option("--json", "WRITE_JSON", is_flag=True, default=False,
+@click.option("--json/--no-json", "WRITE_JSON", default=True,
+              help="Write preprocessing block to phic-metadata.json in the workspace")
+# 2026-07-07: default None -> resolved to <NAME>/phic.json in the command body, so phic.json
+#             lands inside the analysis directory by default (was CWD-relative "phic.json").
+#             An explicit --json-path (e.g. from the coordinator) still overrides.
+# @click.option("--json-path", "JSON_PATH", default="phic.json",
+#               help="Path to phic.json  [default: ./phic.json]")
+@click.option("--json-path", "JSON_PATH", default=None,
+              help="Path to phic-metadata.json  [default: <analysis_dir>/phic-metadata.json]")
 # 2026-05-22: added --run-uuid for Data Conductor job UUID7 linkage
 @click.option("--run-uuid", "RUN_UUID", default=None,
-              help="Data Conductor job UUID7; written to run.run_uuid in phic.json (null if omitted)")
+              help="Data Conductor job UUID7; written to run.run_uuid in phic-metadata.json (null if omitted)")
 # def preprocessing(FILE_INPUT, RES, PLT_MAX_C, HIGH_RESOLUTION, CHR, START, END, NORM, TOLERANCE):  # 2026-05-22: original
 def preprocessing(FILE_INPUT, RES, PLT_MAX_C, HIGH_RESOLUTION, CHR, START, END, NORM, TOLERANCE, NAME, WRITE_JSON, JSON_PATH, RUN_UUID):  # 2026-05-22: added NAME, WRITE_JSON, JSON_PATH, RUN_UUID
     # 2026-05-22: capture start time and gather runtime info before any computation
@@ -746,6 +742,11 @@ def preprocessing(FILE_INPUT, RES, PLT_MAX_C, HIGH_RESOLUTION, CHR, START, END, 
         _runtime_json = _gather_runtime()
         _profile_id_json = None  # set after DIR is known (run_id needs DIR)
     C_input, N_input, DIR, START, END = make_input_contact_matrix(FILE_INPUT, RES, CHR, START, END, NORM, output_dir=NAME)
+    # 2026-07-07: default phic.json into the analysis directory DIR (was CWD-relative "phic.json").
+    if JSON_PATH is None:
+        # 2026-07-10: renamed output file phic.json -> phic-metadata.json (Shinkai-san request; clearer name when distributed).
+        # JSON_PATH = os.path.join(DIR, "phic.json")
+        JSON_PATH = os.path.join(DIR, "phic-metadata.json")
     # 2026-05-22: write status "running" once DIR (= run_id) is known
     if WRITE_JSON:
         try:
@@ -784,7 +785,6 @@ def preprocessing(FILE_INPUT, RES, PLT_MAX_C, HIGH_RESOLUTION, CHR, START, END, 
         C_normalized = calc_C_normalized_high_resolution(C_for_phic)
     else:
         C_normalized = calc_C_normalized(C_for_phic)
-    np.savez_compressed(FILE_OUT_C_NORMALIZED, C_normalized=C_normalized)
     # 2026-05-22: capture contact_stats from normalized matrix (0-1 range) before NaN rows are reinserted
     if WRITE_JSON:
         _cn_upper = C_normalized[np.triu_indices(C_normalized.shape[0], k=1)]
@@ -796,14 +796,16 @@ def preprocessing(FILE_INPUT, RES, PLT_MAX_C, HIGH_RESOLUTION, CHR, START, END, 
             "nonzero_fraction": float((_cn_valid > 0).sum() / len(_cn_valid)) if len(_cn_valid) > 0 else None,
         }
     # -------------------------------------------------------------------------
+    C_normalized_with_nan_bands = C_normalized.copy()
     for idx in nan_indices:
-        N = C_normalized.shape[0]
-        C_normalized = np.insert(np.insert(C_normalized, idx, np.full(N, np.nan), axis=0), idx, np.full(N+1, np.nan), axis=1)
-    P_normalized = calc_Ps(C_normalized, RES)
+        N = C_normalized_with_nan_bands.shape[0]
+        C_normalized_with_nan_bands = np.insert(np.insert(C_normalized_with_nan_bands, idx, np.full(N, np.nan), axis=0), idx, np.full(N+1, np.nan), axis=1)
+    np.savez_compressed(FILE_OUT_C_NORMALIZED, C_normalized=C_normalized, C_normalized_with_nan_bands=C_normalized_with_nan_bands)
+    P_normalized = calc_Ps(C_normalized_with_nan_bands, RES)
     np.savez_compressed(FILE_OUT_P_NORMALIZED, P_normalized=P_normalized)
     # -------------------------------------------------------------------------
     plt.figure(figsize=(10, 10))
-    plt.imshow(C_normalized,
+    plt.imshow(C_normalized_with_nan_bands,
                cmap=cmap_for_C,
                interpolation="none", vmin=0, vmax=PLT_MAX_C)
     plt.colorbar(ticks=[0, PLT_MAX_C], shrink=0.5, orientation="vertical",
@@ -886,15 +888,27 @@ def preprocessing(FILE_INPUT, RES, PLT_MAX_C, HIGH_RESOLUTION, CHR, START, END, 
 @click.option("--gradient-degree", "gradient_degree", type=int, default=2,
               help="Gradient used for optimizing of K  [default=2]")
 # 2026-05-22: added --json and --json-path for phic.json output
-@click.option("--json", "WRITE_JSON", is_flag=True, default=False,
-              help="Write optimization block to phic.json in the workspace")
-@click.option("--json-path", "JSON_PATH", default="phic.json",
-              help="Path to phic.json  [default: ./phic.json]")
+# 2026-07-03: phic.json default-on; pass --no-json to disable (was: is_flag default=False)
+# @click.option("--json", "WRITE_JSON", is_flag=True, default=False,
+@click.option("--json/--no-json", "WRITE_JSON", default=True,
+              help="Write optimization block to phic-metadata.json in the workspace")
+# 2026-07-07: default None -> resolved to <NAME>/phic.json in the command body, so phic.json
+#             lands inside the analysis directory by default (was CWD-relative "phic.json").
+#             An explicit --json-path (e.g. from the coordinator) still overrides.
+# @click.option("--json-path", "JSON_PATH", default="phic.json",
+#               help="Path to phic.json  [default: ./phic.json]")
+@click.option("--json-path", "JSON_PATH", default=None,
+              help="Path to phic-metadata.json  [default: <analysis_dir>/phic-metadata.json]")
 # 2026-05-22: added --run-uuid for Data Conductor job UUID7 linkage
 @click.option("--run-uuid", "RUN_UUID", default=None,
-              help="Data Conductor job UUID7; written to run.run_uuid in phic.json (null if omitted)")
+              help="Data Conductor job UUID7; written to run.run_uuid in phic-metadata.json (null if omitted)")
 # def optimization(NAME, init_k_backbone, alpha, beta, gradient_degree):  # 2026-05-22: original
 def optimization(NAME, init_k_backbone, alpha, beta, gradient_degree, WRITE_JSON, JSON_PATH, RUN_UUID):  # 2026-05-22: added WRITE_JSON, JSON_PATH, RUN_UUID
+    # 2026-07-07: default phic.json into the analysis directory (was CWD-relative "phic.json").
+    if JSON_PATH is None:
+        # 2026-07-10: renamed output file phic.json -> phic-metadata.json (Shinkai-san request; clearer name when distributed).
+        # JSON_PATH = os.path.join(NAME, "phic.json")
+        JSON_PATH = os.path.join(NAME, "phic-metadata.json")
     def gradient_degree_1(diff, C):
         return diff
 
@@ -912,7 +926,8 @@ def optimization(NAME, init_k_backbone, alpha, beta, gradient_degree, WRITE_JSON
     if WRITE_JSON:
         _runtime_json = _gather_runtime()
     # -------------------------------------------------------------------------
-    write_optimization_meta_data(NAME, init_k_backbone, alpha, beta, gradient_degree, version="2.2.1")
+    # 2026-07-07: _optimization_hyper_parameters.txt dropped (values are in the phic.json optimization block).
+    # write_optimization_meta_data(NAME, init_k_backbone, alpha, beta, gradient_degree, version="2.2.2")
     # -------------------------------------------------------------------------
     FILE_READ = NAME + "/C_normalized.npz"
     DIR_OPT = NAME + "/data_optimization"
@@ -987,7 +1002,6 @@ def optimization(NAME, init_k_backbone, alpha, beta, gradient_degree, WRITE_JSON
         # Convergence check (stop if cost reduction is sufficiently small)
         delta = cost_prev - cost
         if 0.0 < delta < stop_delta:
-            np.savez_compressed(DIR_OPT + "/K_optimized.npz", K_optimized=K)
             break
     # -------------------------------------------------------------------------
     fp.close()
@@ -996,30 +1010,35 @@ def optimization(NAME, init_k_backbone, alpha, beta, gradient_degree, WRITE_JSON
     # Restore cell-level NaN mask from the original C_normalized and save C_optimized.npz
     # (N_for_phic-sized, matching the C_normalized.npz convention).
     C_normalized_with_nan, _ = read_normalized_C(FILE_READ)
+    C_normalized_with_nan_bands = np.load(FILE_READ)["C_normalized_with_nan_bands"]
     C_optimized = C.copy()
     C_optimized[np.isnan(C_normalized_with_nan)] = np.nan
-    np.savez_compressed(DIR_OPT + "/C_optimized.npz", C_optimized=C_optimized)
-    # Reinsert removed NaN rows/cols so P_optimized and correlations use the same
-    # genomic coordinate system as P_normalized.npz (N_input-sized).
+    # Reinsert removed NaN rows/cols so K_optimized, P_optimized, and correlations use the
+    # same genomic coordinate system as P_normalized.npz (N_input-sized).
     df_meta = pd.read_csv(NAME + "/_meta_data/_removed_segments.txt", usecols=[0])
+    K_with_nan_bands = K.copy()
+    C_optimized_with_nan_bands = C_optimized.copy()
     if df_meta.shape[0] > 0:
         nan_indices = df_meta.iloc[:, 0].tolist()
         for idx in nan_indices:
-            M = C_normalized_with_nan.shape[0]
-            C_normalized_with_nan = np.insert(np.insert(C_normalized_with_nan, idx, np.full(M, np.nan), axis=0), idx, np.full(M+1, np.nan), axis=1)
-            C_optimized = np.insert(np.insert(C_optimized, idx, np.full(M, np.nan), axis=0), idx, np.full(M+1, np.nan), axis=1)
-    N_full = C_optimized.shape[0]
+            M = C_optimized_with_nan_bands.shape[0]
+            C_optimized_with_nan_bands = np.insert(np.insert(C_optimized_with_nan_bands, idx, np.full(M, np.nan), axis=0), idx, np.full(M+1, np.nan), axis=1)
+            K_with_nan_bands = np.insert(np.insert(K_with_nan_bands, idx, np.full(M, np.nan), axis=0), idx, np.full(M+1, np.nan), axis=1)
+    np.savez_compressed(DIR_OPT + "/K_optimized.npz", K_optimized=K, K_optimized_with_nan_bands=K_with_nan_bands)
+    np.savez_compressed(DIR_OPT + "/C_optimized.npz", C_optimized=C_optimized, C_optimized_with_nan_bands=C_optimized_with_nan_bands)
+    N_full = C_optimized_with_nan_bands.shape[0]
     # Save P_optimized.npz (N_input-sized, matching P_normalized.npz convention).
     P_normalized = np.load(NAME + "/P_normalized.npz")["P_normalized"]
     RES = int(P_normalized[1, 0])
-    P_optimized = calc_Ps(C_optimized, RES)
+    P_optimized = calc_Ps(C_optimized_with_nan_bands, RES)
     np.savez_compressed(DIR_OPT + "/P_optimized.npz", P_optimized=P_optimized)
     # Correlations between C_optimized and C_normalized in the full coordinate system.
-    r, _, _ = calc_correlation(C_optimized, C_normalized_with_nan, N_full)
+    r, _, _ = calc_correlation(C_optimized_with_nan_bands, C_normalized_with_nan_bands, N_full)
     dcr, _, _ = calc_distance_corrected_correlation(
-        C_optimized, C_normalized_with_nan, N_full,
+        C_optimized_with_nan_bands, C_normalized_with_nan_bands, N_full,
         P_optimized[:, 1], P_normalized[:, 1])
-    write_correlations_meta_data(NAME, r, dcr)
+    # 2026-07-07: _correlations.txt dropped; r/dcr are written to the phic.json optimization block below.
+    # write_correlations_meta_data(NAME, r, dcr)
     # -------------------------------------------------------------------------
     # 2026-05-22: write completed optimization block to phic.json
     if WRITE_JSON:
@@ -1084,21 +1103,34 @@ def optimization(NAME, init_k_backbone, alpha, beta, gradient_degree, WRITE_JSON
 @click.option("--plt-max-k", "PLT_MAX_K", type=float, required=True,
               help="Maximum and minimum values of optimized K map")
 # 2026-05-22: added --json and --json-path for phic.json output
-@click.option("--json", "WRITE_JSON", is_flag=True, default=False,
-              help="Write plot_optimization block to phic.json in the workspace")
-@click.option("--json-path", "JSON_PATH", default="phic.json",
-              help="Path to phic.json  [default: ./phic.json]")
+# 2026-07-03: phic.json default-on; pass --no-json to disable (was: is_flag default=False)
+# @click.option("--json", "WRITE_JSON", is_flag=True, default=False,
+@click.option("--json/--no-json", "WRITE_JSON", default=True,
+              help="Write plot_optimization block to phic-metadata.json in the workspace")
+# 2026-07-07: default None -> resolved to <NAME>/phic.json in the command body, so phic.json
+#             lands inside the analysis directory by default (was CWD-relative "phic.json").
+#             An explicit --json-path (e.g. from the coordinator) still overrides.
+# @click.option("--json-path", "JSON_PATH", default="phic.json",
+#               help="Path to phic.json  [default: ./phic.json]")
+@click.option("--json-path", "JSON_PATH", default=None,
+              help="Path to phic-metadata.json  [default: <analysis_dir>/phic-metadata.json]")
 @click.option("--no-figures", "NO_FIGURES", is_flag=True, default=False,
               help="Skip all matplotlib figure generation (faster; use when figures are not needed)")
 # 2026-05-22: added --run-uuid for Data Conductor job UUID7 linkage
 @click.option("--run-uuid", "RUN_UUID", default=None,
-              help="Data Conductor job UUID7; written to run.run_uuid in phic.json (null if omitted)")
+              help="Data Conductor job UUID7; written to run.run_uuid in phic-metadata.json (null if omitted)")
 # def plot_optimization(NAME, RES, PLT_MAX_C, PLT_MAX_K):  # 2026-05-22: original
 # 2026-05-22: --res removed (no longer used; RES is encoded in saved P_*.npz files).
 def plot_optimization(NAME, PLT_MAX_C, PLT_MAX_K, WRITE_JSON, JSON_PATH, NO_FIGURES, RUN_UUID):
     # 2026-05-22: capture start time before any computation
     started_at = _now_iso()
     t0 = time.monotonic()
+    # 2026-07-07: default phic.json into the analysis directory (was CWD-relative "phic.json").
+    # Also the source for r/dcr below (previously read from _meta_data/_correlations.txt).
+    if JSON_PATH is None:
+        # 2026-07-10: renamed output file phic.json -> phic-metadata.json (Shinkai-san request; clearer name when distributed).
+        # JSON_PATH = os.path.join(NAME, "phic.json")
+        JSON_PATH = os.path.join(NAME, "phic-metadata.json")
     if WRITE_JSON:
         _runtime_json = _gather_runtime()
     # READ & OUTPUT FILES
@@ -1109,8 +1141,8 @@ def plot_optimization(NAME, PLT_MAX_C, PLT_MAX_K, WRITE_JSON, JSON_PATH, NO_FIGU
     FILE_READ_P_NORM = NAME + "/P_normalized.npz"
     FILE_READ_P_OPT = DIR_OPT + "/P_optimized.npz"
     FILE_READ_LOG = DIR_OPT + "/optimization.log"
-    FILE_READ_META = NAME + "/_meta_data/_removed_segments.txt"
-    FILE_READ_CORR = NAME + "/_meta_data/_correlations.txt"
+    # 2026-07-07: _correlations.txt dropped; r/dcr now read from the phic.json optimization block.
+    # FILE_READ_CORR = NAME + "/_meta_data/_correlations.txt"
     FILE_FIG_C = DIR_OPT + "/C.svg"
     FILE_FIG_K = DIR_OPT + "/K.svg"
     FILE_FIG_P = DIR_OPT + "/P.svg"
@@ -1126,25 +1158,21 @@ def plot_optimization(NAME, PLT_MAX_C, PLT_MAX_K, WRITE_JSON, JSON_PATH, NO_FIGU
         cmap_for_K.set_bad(color=(0.8, 0.8, 0.8))
     # -------------------------------------------------------------------------
     # 2026-05-22: load pre-computed arrays from optimization (no recomputation here).
-    C_normalized, N = read_normalized_C(FILE_READ_C)
-    K = np.load(FILE_READ_K)["K_optimized"]
-    C_optimized = np.load(FILE_READ_C_OPT)["C_optimized"]
+    K = np.load(FILE_READ_K)["K_optimized_with_nan_bands"]
+    C_normalized = np.load(FILE_READ_C)["C_normalized_with_nan_bands"]
+    C_optimized = np.load(FILE_READ_C_OPT)["C_optimized_with_nan_bands"]
     P_normalized = np.load(FILE_READ_P_NORM)["P_normalized"]
     P_optimized = np.load(FILE_READ_P_OPT)["P_optimized"]
-    # r/dcr written by optimization to _meta_data/_correlations.txt (CSV: name,value).
-    _df_corr = pd.read_csv(FILE_READ_CORR, header=None)
-    r = float(_df_corr.iloc[0, 1])
-    dcr = float(_df_corr.iloc[1, 1])
+    # 2026-07-07: r/dcr now read from the phic.json optimization block (was _meta_data/_correlations.txt).
+    #             optimization writes correlation.pearson + correlation_distance_corrected.pearson there.
+    #             Only used for the figure annotation below, so degrade to NaN if unavailable.
+    # _df_corr = pd.read_csv(FILE_READ_CORR, header=None)
+    # r = float(_df_corr.iloc[0, 1])
+    # dcr = float(_df_corr.iloc[1, 1])
+    _opt_block_json = (_load_or_init_phic_json(JSON_PATH).get("run") or {}).get("optimization") or {}
+    r = float((_opt_block_json.get("correlation") or {}).get("pearson", float("nan")))
+    dcr = float((_opt_block_json.get("correlation_distance_corrected") or {}).get("pearson", float("nan")))
     # -------------------------------------------------------------------------
-    df_meta = pd.read_csv(FILE_READ_META, usecols=[0])
-    if df_meta.shape[0] > 0:
-        nan_indices = df_meta.iloc[:, 0].tolist()
-        for idx in nan_indices:
-            N = C_normalized.shape[0]
-            C_normalized = np.insert(np.insert(C_normalized, idx, np.full(N, np.nan), axis=0), idx, np.full(N+1, np.nan), axis=1)
-            C_optimized = np.insert(np.insert(C_optimized, idx, np.full(N, np.nan), axis=0), idx, np.full(N+1, np.nan), axis=1)
-            K = np.insert(np.insert(K, idx, np.full(N, np.nan), axis=0), idx, np.full(N+1, np.nan), axis=1)
-
     N = C_normalized.shape[0]
     C = np.zeros((N, N))
     C[np.triu_indices(N, k=0)] = C_normalized[np.triu_indices(N, k=0)]
@@ -1355,16 +1383,28 @@ def sampling(NAME, SAMPLE, SEED):
 @click.option("--name", "NAME", required=True,
               help="Target directory name")
 # 2026-05-22: added --json and --json-path for phic.json output
-@click.option("--json", "WRITE_JSON", is_flag=True, default=False,
-              help="Write msd block to phic.json in the workspace")
-@click.option("--json-path", "JSON_PATH", default="phic.json",
-              help="Path to phic.json  [default: ./phic.json]")
+# 2026-07-03: phic.json default-on; pass --no-json to disable (was: is_flag default=False)
+# @click.option("--json", "WRITE_JSON", is_flag=True, default=False,
+@click.option("--json/--no-json", "WRITE_JSON", default=True,
+              help="Write msd block to phic-metadata.json in the workspace")
+# 2026-07-07: default None -> resolved to <NAME>/phic.json in the command body, so phic.json
+#             lands inside the analysis directory by default (was CWD-relative "phic.json").
+#             An explicit --json-path (e.g. from the coordinator) still overrides.
+# @click.option("--json-path", "JSON_PATH", default="phic.json",
+#               help="Path to phic.json  [default: ./phic.json]")
+@click.option("--json-path", "JSON_PATH", default=None,
+              help="Path to phic-metadata.json  [default: <analysis_dir>/phic-metadata.json]")
 # 2026-05-22: added --run-uuid for Data Conductor job UUID7 linkage
 @click.option("--run-uuid", "RUN_UUID", default=None,
-              help="Data Conductor job UUID7; written to run.run_uuid in phic.json (null if omitted)")
+              help="Data Conductor job UUID7; written to run.run_uuid in phic-metadata.json (null if omitted)")
 def msd(NAME, WRITE_JSON, JSON_PATH, RUN_UUID):
     started_at = _now_iso()
     t0 = time.monotonic()
+    # 2026-07-07: default phic.json into the analysis directory (was CWD-relative "phic.json").
+    if JSON_PATH is None:
+        # 2026-07-10: renamed output file phic.json -> phic-metadata.json (Shinkai-san request; clearer name when distributed).
+        # JSON_PATH = os.path.join(NAME, "phic.json")
+        JSON_PATH = os.path.join(NAME, "phic-metadata.json")
     if WRITE_JSON:
         _runtime_json = _gather_runtime()
     # -------------------------------------------------------------------------
@@ -1519,16 +1559,28 @@ def plot_msd(NAME, PLT_UPPER, PLT_LOWER, PLT_MAX_LOG, PLT_MIN_LOG, ASPECT):
 @click.option("--name", "NAME", required=True,
               help="Target directory name")
 # 2026-05-22: added --json and --json-path for phic.json output
-@click.option("--json", "WRITE_JSON", is_flag=True, default=False,
-              help="Write losstangent block to phic.json in the workspace")
-@click.option("--json-path", "JSON_PATH", default="phic.json",
-              help="Path to phic.json  [default: ./phic.json]")
+# 2026-07-03: phic.json default-on; pass --no-json to disable (was: is_flag default=False)
+# @click.option("--json", "WRITE_JSON", is_flag=True, default=False,
+@click.option("--json/--no-json", "WRITE_JSON", default=True,
+              help="Write losstangent block to phic-metadata.json in the workspace")
+# 2026-07-07: default None -> resolved to <NAME>/phic.json in the command body, so phic.json
+#             lands inside the analysis directory by default (was CWD-relative "phic.json").
+#             An explicit --json-path (e.g. from the coordinator) still overrides.
+# @click.option("--json-path", "JSON_PATH", default="phic.json",
+#               help="Path to phic.json  [default: ./phic.json]")
+@click.option("--json-path", "JSON_PATH", default=None,
+              help="Path to phic-metadata.json  [default: <analysis_dir>/phic-metadata.json]")
 # 2026-05-22: added --run-uuid for Data Conductor job UUID7 linkage
 @click.option("--run-uuid", "RUN_UUID", default=None,
-              help="Data Conductor job UUID7; written to run.run_uuid in phic.json (null if omitted)")
+              help="Data Conductor job UUID7; written to run.run_uuid in phic-metadata.json (null if omitted)")
 def losstangent(NAME, WRITE_JSON, JSON_PATH, RUN_UUID):
     started_at = _now_iso()
     t0 = time.monotonic()
+    # 2026-07-07: default phic.json into the analysis directory (was CWD-relative "phic.json").
+    if JSON_PATH is None:
+        # 2026-07-10: renamed output file phic.json -> phic-metadata.json (Shinkai-san request; clearer name when distributed).
+        # JSON_PATH = os.path.join(NAME, "phic.json")
+        JSON_PATH = os.path.join(NAME, "phic-metadata.json")
     if WRITE_JSON:
         _runtime_json = _gather_runtime()
     # -------------------------------------------------------------------------
