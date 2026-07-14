@@ -136,4 +136,5 @@ demo/make_demo_input_by_Straw.py
 demo/ES_mapq30_KR_chr8_42100000-44525000_res25000bp/
 demo/run_tmp.sh
 demo/ES_mapq30_KR_chr2_40000000-65000000_res25000bp/
+demo/Kakui_etal_Nature_Genetics_2017_S_pombe_WT_interphase_MAPQ30_GW_normalization_GW_KR_chrI_res25000bp/
 

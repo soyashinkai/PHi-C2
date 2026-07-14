@@ -159,50 +159,35 @@ def transform_K_into_L(K):
     return L
 # -----------------------------------------------------------------------------
 
-def equilibrium_conformation_of_normal_coordinates(lam, N):
-    Xx = np.zeros(N)
-    Xy = np.zeros(N)
-    Xz = np.zeros(N)
-    for p in range(1, N):
-        sd = np.sqrt(1.0 / 3.0 / lam[p])
-        Xx[p] = sd * np.random.randn()
-        Xy[p] = sd * np.random.randn()
-        Xz[p] = sd * np.random.randn()
-    return Xx, Xy, Xz
+def equilibrium_conformation_of_normal_coordinates(lam, N, rng):
+    X = np.zeros((N, 3))
+    sd = np.sqrt(1.0 / 3.0 / lam[1:])
+    X[1:, :] = sd[:, None] * rng.standard_normal((N - 1, 3))
+    return X
 # -----------------------------------------------------------------------------
 
-def convert_X_to_R(Xx, Xy, Xz, Q):
-    Rx = np.dot(Q, Xx)
-    Ry = np.dot(Q, Xy)
-    Rz = np.dot(Q, Xz)
-    return Rx, Ry, Rz
+def convert_X_to_R(X, Q):
+    return Q @ X
 # -----------------------------------------------------------------------------
 
-def integrate_polymer_network(x, y, z, L, N, NOISE, F_Coefficient):
-    noise_x = NOISE * np.random.randn(N)
-    noise_y = NOISE * np.random.randn(N)
-    noise_z = NOISE * np.random.randn(N)
+def ou_transition_coefficients(lam, eps, com_motion):
+    # Exact OU scheme (Gillespie, Phys. Rev. E, 1996):
+    # c_p = exp(-3 eps lam_p), s_p = sqrt((1 - exp(-6 eps lam_p)) / (3 lam_p)).
+    # Mode 0 (lam=0, center of mass) would give 0/0; com_motion selects between
+    # the fixed limit (s=0) and the free-diffusion limit (s=sqrt(2 eps)).
+    c = np.ones_like(lam)
+    s = np.zeros_like(lam)
+    k = 3.0 * lam[1:]
+    c[1:] = np.exp(-k * eps)
+    s[1:] = np.sqrt((1.0 - np.exp(-2.0 * k * eps)) / k)
+    if com_motion:
+        s[0] = np.sqrt(2.0 * eps)
+    return c, s
+# -----------------------------------------------------------------------------
 
-    force_x = - F_Coefficient * np.dot(L, x)
-    force_y = - F_Coefficient * np.dot(L, y)
-    force_z = - F_Coefficient * np.dot(L, z)
-
-    x_dt = x + force_x + noise_x
-    y_dt = y + force_y + noise_y
-    z_dt = z + force_z + noise_z
-
-    force_x = - F_Coefficient * np.dot(L, x_dt)
-    force_y = - F_Coefficient * np.dot(L, y_dt)
-    force_z = - F_Coefficient * np.dot(L, z_dt)
-
-    x_2dt = x_dt + force_x + noise_x
-    y_2dt = y_dt + force_y + noise_y
-    z_2dt = z_dt + force_z + noise_z
-
-    X = 0.5 * (x + x_2dt)
-    Y = 0.5 * (y + y_2dt)
-    Z = 0.5 * (z + z_2dt)
-    return X, Y, Z
+def integrate_normal_coordinates(X, N, c, s, rng):
+    xi = rng.standard_normal((N, 3))
+    return c[:, None] * X + s[:, None] * xi
 # -----------------------------------------------------------------------------
 
 def write_psfdata(psf_path, NAME, N):
@@ -408,7 +393,7 @@ def _empty_phic_json():
     return {  # 2026-05-25: new
         "$schema": "./schemas/phic-json-schema_2026-05-25.json",  # 2026-05-25: updated schema filename
         "_comment": "PHi-C2 analysis log. See the schema for field descriptions.",
-        "phic_version": "2.2.2", # 2026-07-03
+        "phic_version": "2.2.3", # 2026-07-15
         "schema_version": "2026-05-25",  # 2026-05-25: updated schema version
         "created_at": _now_iso(),
         "updated_at": _now_iso(),
@@ -527,7 +512,7 @@ def _gather_runtime():
         "memory_gb": round(psutil.virtual_memory().total / (1024 ** 3), 2),
         "gpu": _detect_gpu(),
         "math_libraries": _detect_math_libraries(),
-        "phic_version": "2.2.2",
+        "phic_version": "2.2.3",
         "environment": _detect_environment(),
     }
 
@@ -1296,19 +1281,17 @@ def plot_optimization(NAME, PLT_MAX_C, PLT_MAX_K, WRITE_JSON, JSON_PATH, NO_FIGU
 @click.option("--name", "NAME", required=True,
               help="Target directory name")
 @click.option("--eps", "EPS", type=float, default=1e-3,
-              help="Stepsize in the Langevin dynamics  [default=1e-3]")
-@click.option("--interval", "INTERVAL", type=int, required=True,
-              help="The number of steps between output frames")
+              help="Time step between output frames (exact OU dynamics)  [default=1e-3]")
 @click.option("--frame", "FRAME", type=int, required=True,
               help="The number of output frames")
 @click.option("--sample", "SAMPLE", type=int, default=1,
               help="The number of output dynamics  [default=1]")
+@click.option("--com-motion", "COM_MOTION", is_flag=True, default=False,
+              help="Allow free diffusion of the center-of-mass mode  [default=off]")
 @click.option("--seed", "SEED", type=int, default=12345678,
               help="Seed of the random numbers  [default=12345678]")
-def dynamics(NAME, EPS, INTERVAL, FRAME, SAMPLE, SEED):
-    NOISE = np.sqrt(2.0 * EPS)
-    F_Coefficient = 3.0 * EPS
-    np.random.seed(SEED)
+def dynamics(NAME, EPS, FRAME, SAMPLE, COM_MOTION, SEED):
+    rng = np.random.default_rng(SEED)
     # -------------------------------------------------------------------------
     FILE_READ_K = NAME + "/data_optimization/K_optimized.npz"
     DIR_4D = NAME + "/data_dynamics"
@@ -1319,27 +1302,26 @@ def dynamics(NAME, EPS, INTERVAL, FRAME, SAMPLE, SEED):
     write_psfdata(psf_path, NAME, N)
     L = transform_K_into_L(K)
     lam, Q = np.linalg.eigh(L)
+    c, s = ou_transition_coefficients(lam, EPS, COM_MOTION)
     u = mda.Universe(psf_path)
     u.load_new(np.zeros((1, N, 3), dtype=np.float32))
     for sample in tqdm(range(SAMPLE), desc="dynamics"):
-        Xx, Xy, Xz = equilibrium_conformation_of_normal_coordinates(lam, N)
-        Rx, Ry, Rz = convert_X_to_R(Xx, Xy, Xz, Q)
+        X = equilibrium_conformation_of_normal_coordinates(lam, N, rng)
         # ---------------------------------------------------------------------
         xyz_path = os.path.join(DIR_4D, f"sample{sample}.xyz")
         dcd_path = os.path.join(DIR_4D, f"sample{sample}.dcd")
         with open(xyz_path, "w") as fp, DCDWriter(dcd_path, u.atoms.n_atoms) as dcd:
             for frame in range(FRAME + 1):
                 # -------------------------------------------------------------
+                R = convert_X_to_R(X, Q)
                 print("%d" % N, file=fp)
                 print("frame = %d" % frame, file=fp)
-                coords = np.column_stack([Rx, Ry, Rz])
-                np.savetxt(fp, coords, fmt="CA\t%f\t%f\t%f")
-                u.atoms.positions = coords
+                np.savetxt(fp, R, fmt="CA\t%f\t%f\t%f")
+                u.atoms.positions = R
                 dcd.write(u.atoms)
                 # -------------------------------------------------------------
-                for step in range(INTERVAL):
-                    Rx, Ry, Rz = integrate_polymer_network(Rx, Ry, Rz, L, N,
-                                                           NOISE, F_Coefficient)
+                if frame < FRAME:
+                    X = integrate_normal_coordinates(X, N, c, s, rng)
 # -----------------------------------------------------------------------------
 
 @cli.command()
@@ -1350,7 +1332,7 @@ def dynamics(NAME, EPS, INTERVAL, FRAME, SAMPLE, SEED):
 @click.option("--seed", "SEED", type=int, default=12345678,
               help="Seed of the random numbers  [default=12345678]")
 def sampling(NAME, SAMPLE, SEED):
-    np.random.seed(SEED)
+    rng = np.random.default_rng(SEED)
     # -------------------------------------------------------------------------
     FILE_READ_K = NAME + "/data_optimization/K_optimized.npz"
     DIR_3D = NAME + "/data_sampling"
@@ -1368,14 +1350,13 @@ def sampling(NAME, SAMPLE, SEED):
     u.load_new(np.zeros((1, N, 3), dtype=np.float32))
     with open(FILE_OUT, "w") as fp, DCDWriter(dcd_path, u.atoms.n_atoms) as dcd:
         for sample in tqdm(range(SAMPLE), desc="sampling"):
-            Xx, Xy, Xz = equilibrium_conformation_of_normal_coordinates(lam, N)
-            Rx, Ry, Rz = convert_X_to_R(Xx, Xy, Xz, Q)
+            X = equilibrium_conformation_of_normal_coordinates(lam, N, rng)
+            R = convert_X_to_R(X, Q)
             # -----------------------------------------------------------------
             print("%d" % N, file=fp)
             print("sample = %d" % sample, file=fp)
-            coords = np.column_stack([Rx, Ry, Rz])
-            np.savetxt(fp, coords, fmt="CA\t%f\t%f\t%f")
-            u.atoms.positions = coords
+            np.savetxt(fp, R, fmt="CA\t%f\t%f\t%f")
+            u.atoms.positions = R
             dcd.write(u.atoms)
 # -----------------------------------------------------------------------------
 

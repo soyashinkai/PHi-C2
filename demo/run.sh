@@ -1,44 +1,43 @@
 #!/bin/bash
 
 # Set Hi-C file (.hic format)
-HIC="http://hicfiles.s3.amazonaws.com/external/bonev/ES_mapq30.hic"
+HIC="Kakui_etal_Nature_Genetics_2017_S_pombe_WT_interphase_MAPQ30_GW_normalization.hic"
 
-CHR="2"
-START=40000000
-END=65000000
+CHR="I"
 RES=25000
-PLT_MAX_C=0.05
-TOL=0.4
+NORM="GW_KR"
+PLT_MAX_C=0.04
+TOL=0.6
+
+NAME="Kakui_etal_Nature_Genetics_2017_S_pombe_WT_interphase_MAPQ30_GW_normalization_${NORM}_chr${CHR}_res${RES}bp"
 
 # Fetch the input Hi-C file
-phic fetch-fileinfo --input ${HIC}
+python ${CODE} fetch-fileinfo --input ${HIC}
 
 # Run the preprocessing
-phic preprocessing --input ${HIC} --res ${RES} --plt-max-c ${PLT_MAX_C} --chr ${CHR} --grs ${START} --gre ${END} --norm KR --tolerance ${TOL}
-
-NAME="ES_mapq30_KR_chr${CHR}_${START}-${END}_res${RES}bp"
+python ${CODE} preprocessing --input ${HIC} --res ${RES} --plt-max-c ${PLT_MAX_C} --chr ${CHR} --norm ${NORM} --tolerance ${TOL}
 
 # Run the optimization
-phic optimization --name ${NAME}
+python ${CODE} optimization --name ${NAME}
 
 # Plot the optimized results
-phic plot-optimization --name ${NAME} --plt-max-c ${PLT_MAX_C} --plt-max-k 0.01
+python ${CODE} plot-optimization --name ${NAME} --plt-max-c ${PLT_MAX_C} --plt-max-k 0.01
 
 # Run the 4D dynamics simulation
-phic dynamics --name ${NAME} --interval 10 --frame 100
+python ${CODE} dynamics --name ${NAME} --eps 1e-1 --frame 1000 --seed 1234
 
 # Run the 3D conformation sampling
-phic sampling --name ${NAME} --sample 100
+python ${CODE} sampling --name ${NAME} --sample 100 --seed 1234
 
 # Calculate the MSDs
-phic msd --name ${NAME}
+python ${CODE} msd --name ${NAME}
 
 # Plot the spectrum of the MSDs
-phic plot-msd --name ${NAME} --plt-upper 3 --plt-lower 0 --plt-max-log 2.0 --plt-min-log 0.5 --aspect 1.5
+python ${CODE} plot-msd --name ${NAME} --plt-upper 4 --plt-lower -1 --plt-max-log 2.0 --plt-min-log 0 --aspect 0.2
 
 # Calculate the loss tangent
-phic losstangent --name ${NAME}
+python ${CODE} losstangent --name ${NAME}
 
 # Plot the spectrum of the loss tangent
-phic plot-losstangent --name ${NAME} --plt-upper 0 --plt-lower -3 --plt-max-log 0.3 --aspect 1.5
+python ${CODE} plot-losstangent --name ${NAME} --plt-upper 1 --plt-lower -4 --plt-max-log 0.5 --aspect 0.2
 

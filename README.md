@@ -54,7 +54,12 @@ Then, execute the following script:
 
 This process may take a few minutes.
 
+<!--
 The demo uses Hi-C data of mouse embryonic stem cells (chr2: 40–65 Mb, 25-kb resolution, KR normalization) by [Bonev et al.](https://doi.org/10.1016/j.cell.2017.09.043).
+-->
+The demo uses Hi-C data of fission yeast *Schizosaccharomyces pombe* (chrI, 25-kb resolution, genome-wide KR normalization).
+The original experiment was reported by [Kakui et al.](https://doi.org/10.1038/ng.3938), and the included `.hic` file was generated from those data by Shinkai et al. in their [Research Square](https://doi.org/10.21203/rs.3.rs-9062331/v1).
+
 
 * * *
 
@@ -230,13 +235,27 @@ Example:
     phic dynamics [OPTIONS]
 
     Options:
-      --name      TEXT      Target directory name  [required]
-      --eps       FLOAT     Stepsize in the Langevin dynamics  [default=1e-3]
-      --interval  INTEGER   The number of steps between output frames  [required]
-      --frame     INTEGER   The number of output frames  [required]
-      --sample    INTEGER   The number of output dynamics  [default=1]
-      --seed      INTEGER   Seed of the random numbers  [default=12345678]
-      --help                Show this message and exit.
+      --name        TEXT      Target directory name  [required]
+      --eps         FLOAT     Time step between output frames (exact OU dynamics)
+                              [default=1e-3]
+      --frame       INTEGER   The number of output frames  [required]
+      --sample      INTEGER   The number of output dynamics  [default=1]
+      --com-motion            Allow free diffusion of the center-of-mass mode
+                              [default=off]
+      --seed        INTEGER   Seed of the random numbers  [default=12345678]
+      --help                  Show this message and exit.
+
+`dynamics` integrates the normal modes using [Gillespie's (1996) exact one-step
+solution for the Ornstein--Uhlenbeck process](https://doi.org/10.1103/PhysRevE.54.2084),
+replacing the previous Heun (predictor--corrector) discretization. The exact
+scheme has no stability upper bound on the time step and converts normal modes
+to real-space coordinates only when each output frame is written. The time
+between output frames is therefore `eps`; `--interval` is no longer used. To
+reproduce the frame spacing from an earlier release, set `--eps` to the previous
+`eps * interval`.
+
+By default, the center-of-mass mode is fixed at the origin. Use
+`--com-motion` to allow it to diffuse freely.
 
 The outputs are the followings:
 
@@ -248,7 +267,7 @@ The outputs are the followings:
 
 Example:
 
-    phic dynamics --name NAME --interval 10 --frame 100
+    phic dynamics --name NAME --eps 1e-2 --frame 100
 
 #### 3-3. sampling
 
