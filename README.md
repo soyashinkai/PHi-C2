@@ -1,3 +1,9 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/PHi-C_Yset_RGB_B.svg">
+  <source media="(prefers-color-scheme: light)" srcset="img/PHi-C_Yset_RGB_A.svg">
+  <img src="img/PHi-C_Yset_RGB_A.svg" alt="PHi-C2: Polymer dynamics simulation from Hi-C data" width="640">
+</picture>
+
 # PHi-C2
 PHi-C2 allows for a physical interpretation of a Hi-C contact matrix.
 The `phic` package includes a suite of command line tools.
