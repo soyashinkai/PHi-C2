@@ -128,6 +128,8 @@ Example:
 
 In version 2.1.1 and later, the input data format has been changed to `.hic` or `.mcool`. Additionally, it is now possible to exclude rows and columns containing NaN values from the analysis by specifying their allowed proportion (ranging from 0 to 1) using the `tolerance` parameter.
 
+As of version 2.2.4, bins with no read data—which `hictkpy` returns as `0.0` when the contact matrix is densified—are restored to `NaN` in the input contact matrix. They are therefore counted by `--tolerance` and excluded from the downstream normalization, instead of being treated as observed zero contacts. Note that sparse (e.g. high-resolution) data now yield much larger NaN proportions per row, so `--tolerance` may need to be set higher than in previous versions to retain the same segments.
+
 When using the `preprocessing` subcommand, a directory will be automatically created based on the input Hi-C file name, chromosome number, genomic region of interest (optional), resolution, and normalization method. All subsequent analysis results will be stored in this directory. In the following explanations, we refer to this directory as _NAME_.
 
 The outputs are as follows:

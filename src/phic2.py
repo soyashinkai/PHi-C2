@@ -228,11 +228,13 @@ def make_input_contact_matrix(FILE_INPUT, RES, CHR, START, END, NORM, output_dir
         START = int(0)
         END = int(chroms[CHR])
         C_input = f.fetch(CHR, normalization=NORM).to_numpy().astype(float)
+        C_input[C_input == 0] = np.nan  # 2026-08-17: hictkpy fills pixels with no read data as 0.0; restore them as NaN
         N_input = C_input.shape[0]
         DIR = f"{NAME}_{NORM}_{CHR_LABEL}_res{RES}bp"
     else:
         ROI = f"{CHR}:{START}-{END}"
         C_input = f.fetch(ROI, normalization=NORM).to_numpy().astype(float)
+        C_input[C_input == 0] = np.nan  # 2026-08-17: same as above
         N_input = C_input.shape[0]
         DIR = f"{NAME}_{NORM}_{CHR_LABEL}_{START}-{END}_res{RES}bp"
 
@@ -393,7 +395,7 @@ def _empty_phic_json():
     return {  # 2026-05-25: new
         "$schema": "./schemas/phic-json-schema_2026-05-25.json",  # 2026-05-25: updated schema filename
         "_comment": "PHi-C2 analysis log. See the schema for field descriptions.",
-        "phic_version": "2.2.3", # 2026-07-15
+        "phic_version": "2.2.4", # 2026-08-17
         "schema_version": "2026-05-25",  # 2026-05-25: updated schema version
         "created_at": _now_iso(),
         "updated_at": _now_iso(),
@@ -512,7 +514,7 @@ def _gather_runtime():
         "memory_gb": round(psutil.virtual_memory().total / (1024 ** 3), 2),
         "gpu": _detect_gpu(),
         "math_libraries": _detect_math_libraries(),
-        "phic_version": "2.2.3",
+        "phic_version": "2.2.4",
         "environment": _detect_environment(),
     }
 
